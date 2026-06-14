@@ -19,7 +19,8 @@ class Easy_CrowdedPacket:
         BACK_VALUE=0.0, BACK_SIZE=64, BACK_FILTERSIZE=3, DETECT_THRESH=5.0, ANALYSIS_THRESH=5.0, \
         DETECT_MINAREA=5, DETECT_MAXAREA=0, DEBLEND_MINCONT=0.005, BACKPHOTO_TYPE='LOCAL', \
         ONLY_FLAGS=None, BoundarySIZE=0.0, BACK_SIZE_SUPER=128, StarExt_iter=2, PriorBanMask=None, \
-        BACKEND_4SUBTRACT='Cupy', CUDA_DEVICE_4SUBTRACT='0', NUM_CPU_THREADS_4SUBTRACT=8, VERBOSE_LEVEL=2):
+        BACKEND_4SUBTRACT='Cupy', CUDA_DEVICE_4SUBTRACT='0', NUM_CPU_THREADS_4SUBTRACT=8, \
+        SINGLE_PRECISION=False, VERBOSE_LEVEL=2):
         
         """
         # NOTE: This function is to Perform Crowded-Flavor SFFT for single task:
@@ -215,7 +216,7 @@ class Easy_CrowdedPacket:
         SFFTConfig = SingleSFFTConfigure.SSC(NX=PixA_REF.shape[0], NY=PixA_REF.shape[1], KerHW=KerHW, \
             KerPolyOrder=KerPolyOrder, BGPolyOrder=BGPolyOrder, ConstPhotRatio=ConstPhotRatio, \
             BACKEND_4SUBTRACT=BACKEND_4SUBTRACT, NUM_CPU_THREADS_4SUBTRACT=NUM_CPU_THREADS_4SUBTRACT, \
-            VERBOSE_LEVEL=VERBOSE_LEVEL)
+            SINGLE_PRECISION=SINGLE_PRECISION, VERBOSE_LEVEL=VERBOSE_LEVEL)
 
         if VERBOSE_LEVEL in [1, 2]:
             _message = 'Function Compilations of SFFT-SUBTRACTION TAKES [%.3f s]' %(time.time() - Tcomp_start)

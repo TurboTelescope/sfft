@@ -25,7 +25,7 @@ class Easy_SparsePacket:
         MatchTol=None, MatchTolFactor=3.0, COARSE_VAR_REJECTION=True, CVREJ_MAGD_THRESH=0.12, \
         ELABO_VAR_REJECTION=True, EVREJ_RATIO_THREH=5.0, EVREJ_SAFE_MAGDEV=0.04, StarExt_iter=4, \
         XY_PriorBan=None, PostAnomalyCheck=False, PAC_RATIO_THRESH=5.0, BACKEND_4SUBTRACT='Cupy', \
-        CUDA_DEVICE_4SUBTRACT='0', NUM_CPU_THREADS_4SUBTRACT=8, VERBOSE_LEVEL=2):
+        CUDA_DEVICE_4SUBTRACT='0', NUM_CPU_THREADS_4SUBTRACT=8, SINGLE_PRECISION=False, VERBOSE_LEVEL=2):
         
         """
         # NOTE: This function is to Perform Sparse-Flavor SFFT for a single task:
@@ -336,7 +336,7 @@ class Easy_SparsePacket:
         SFFTConfig = SingleSFFTConfigure.SSC(NX=PixA_REF.shape[0], NY=PixA_REF.shape[1], KerHW=KerHW, \
             KerPolyOrder=KerPolyOrder, BGPolyOrder=BGPolyOrder, ConstPhotRatio=ConstPhotRatio, \
             BACKEND_4SUBTRACT=BACKEND_4SUBTRACT, NUM_CPU_THREADS_4SUBTRACT=NUM_CPU_THREADS_4SUBTRACT, \
-            VERBOSE_LEVEL=VERBOSE_LEVEL)
+            SINGLE_PRECISION=SINGLE_PRECISION, VERBOSE_LEVEL=VERBOSE_LEVEL)
         
         if VERBOSE_LEVEL in [1, 2]:
             _message = 'Function Compilations of SFFT-SUBTRACTION '

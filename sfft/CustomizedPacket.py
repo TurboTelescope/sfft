@@ -13,7 +13,8 @@ class Customized_Packet:
     @staticmethod
     def CP(FITS_REF, FITS_SCI, FITS_mREF, FITS_mSCI, ForceConv, GKerHW, \
         FITS_DIFF=None, FITS_Solution=None, KerPolyOrder=2, BGPolyOrder=2, ConstPhotRatio=True, \
-        BACKEND_4SUBTRACT='Cupy', CUDA_DEVICE_4SUBTRACT='0', NUM_CPU_THREADS_4SUBTRACT=8, NUMBA_CACHE=True, VERBOSE_LEVEL=2):
+        BACKEND_4SUBTRACT='Cupy', CUDA_DEVICE_4SUBTRACT='0', NUM_CPU_THREADS_4SUBTRACT=8, NUMBA_CACHE=True, \
+        SINGLE_PRECISION=False, VERBOSE_LEVEL=2):
         
         """
         * Parameters for Customized SFFT
@@ -138,7 +139,7 @@ class Customized_Packet:
         SFFTConfig = SingleSFFTConfigure.SSC(NX=PixA_REF.shape[0], NY=PixA_REF.shape[1], KerHW=KerHW, \
             KerPolyOrder=KerPolyOrder, BGPolyOrder=BGPolyOrder, ConstPhotRatio=ConstPhotRatio, \
             BACKEND_4SUBTRACT=BACKEND_4SUBTRACT, NUM_CPU_THREADS_4SUBTRACT=NUM_CPU_THREADS_4SUBTRACT, \
-            NUMBA_CACHE=NUMBA_CACHE, VERBOSE_LEVEL=VERBOSE_LEVEL)
+            NUMBA_CACHE=NUMBA_CACHE, SINGLE_PRECISION=SINGLE_PRECISION, VERBOSE_LEVEL=VERBOSE_LEVEL)
 
         if VERBOSE_LEVEL in [1, 2]:
             _message = 'Function Compilations of SFFT-SUBTRACTION TAKES [%.3f s]' %(time.time() - Tcomp_start)

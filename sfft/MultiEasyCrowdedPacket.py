@@ -23,7 +23,7 @@ class MultiEasy_CrowdedPacket:
         BACK_TYPE='AUTO', BACK_VALUE='0.0', BACK_SIZE=64, BACK_FILTERSIZE=3, DETECT_THRESH=5.0, \
         ANALYSIS_THRESH=5.0, DETECT_MINAREA=5, DETECT_MAXAREA=0, DEBLEND_MINCONT=0.005, BACKPHOTO_TYPE='LOCAL', \
         ONLY_FLAGS=None, BoundarySIZE=0.0, BACK_SIZE_SUPER=128, StarExt_iter=2, PriorBanMask_Queue=[], \
-        CLEAN_GPU_MEMORY=False, VERBOSE_LEVEL=2):
+        CLEAN_GPU_MEMORY=False, SINGLE_PRECISION=False, VERBOSE_LEVEL=2):
 
         """
         # NOTE: This function is to perform Crowded-Flavor SFFT for multiple tasks:
@@ -197,6 +197,7 @@ class MultiEasy_CrowdedPacket:
         self.KerPolyOrder = KerPolyOrder
         self.BGPolyOrder = BGPolyOrder
         self.ConstPhotRatio = ConstPhotRatio
+        self.SINGLE_PRECISION = SINGLE_PRECISION
         self.MaskSatContam = MaskSatContam
         
         self.GAIN_KEY = GAIN_KEY
@@ -448,7 +449,7 @@ class MultiEasy_CrowdedPacket:
                             SFFTConfig = SingleSFFTConfigure.SSC(NX=PixA_REF.shape[0], NY=PixA_REF.shape[1], \
                                 KerHW=KerHW, KerPolyOrder=self.KerPolyOrder, BGPolyOrder=self.BGPolyOrder, \
                                 ConstPhotRatio=self.ConstPhotRatio, BACKEND_4SUBTRACT=BACKEND_4SUBTRACT, \
-                                VERBOSE_LEVEL=self.VERBOSE_LEVEL)
+                                SINGLE_PRECISION=self.SINGLE_PRECISION, VERBOSE_LEVEL=self.VERBOSE_LEVEL)
 
                             if self.VERBOSE_LEVEL in [1, 2]:
                                 _message = 'THREAD-4SUBTRACT-[%d] & TASK-[%d]: ' %(INDEX_THREAD_4SUBTRACT, taskidx_acquired)

@@ -40,7 +40,7 @@ class PureCupy_Customized_Packet:
     @staticmethod
     def PCCP(PixA_REF_GPU, PixA_SCI_GPU, PixA_mREF_GPU, PixA_mSCI_GPU, 
         ForceConv, GKerHW, KerPolyOrder=2, BGPolyOrder=2, ConstPhotRatio=True, \
-        CUDA_DEVICE_4SUBTRACT='0', VERBOSE_LEVEL=2):
+        CUDA_DEVICE_4SUBTRACT='0', SINGLE_PRECISION=False, VERBOSE_LEVEL=2):
         """
         * Parameters for Cupy Customized SFFT (Pure Cupy Version)
         # @ Customized: Skip built-in preprocessing (automatic image-masking) by a customized masked image-pair.
@@ -110,10 +110,11 @@ class PureCupy_Customized_Packet:
         assert PixA_mREF_GPU.ndim == 2, "The input PixA_mREF_GPU is not two-dimensional!"
         assert PixA_mSCI_GPU.ndim == 2, "The input PixA_mSCI_GPU is not two-dimensional!"
 
-        assert PixA_REF_GPU.dtype == cp.float64, "The array does not have dtype cp.float64!"
-        assert PixA_SCI_GPU.dtype == cp.float64, "The array does not have dtype cp.float64!"
-        assert PixA_mREF_GPU.dtype == cp.float64, "The array does not have dtype cp.float64!"
-        assert PixA_mSCI_GPU.dtype == cp.float64, "The array does not have dtype cp.float64!"
+        _REAL_DTYPE = cp.float32 if SINGLE_PRECISION else cp.float64
+        assert PixA_REF_GPU.dtype == _REAL_DTYPE, "The array does not have dtype %s!" %_REAL_DTYPE
+        assert PixA_SCI_GPU.dtype == _REAL_DTYPE, "The array does not have dtype %s!" %_REAL_DTYPE
+        assert PixA_mREF_GPU.dtype == _REAL_DTYPE, "The array does not have dtype %s!" %_REAL_DTYPE
+        assert PixA_mSCI_GPU.dtype == _REAL_DTYPE, "The array does not have dtype %s!" %_REAL_DTYPE
 
         assert ForceConv in ['REF', 'SCI']
         ConvdSide = ForceConv
@@ -138,7 +139,7 @@ class PureCupy_Customized_Packet:
         NX, NY = PixA_REF_GPU.shape
         SFFTConfig = SingleSFFTConfigure.SSC(NX=NX, NY=NY, KerHW=KerHW, \
             KerPolyOrder=KerPolyOrder, BGPolyOrder=BGPolyOrder, ConstPhotRatio=ConstPhotRatio, \
-            BACKEND_4SUBTRACT="Cupy", VERBOSE_LEVEL=VERBOSE_LEVEL)
+            BACKEND_4SUBTRACT="Cupy", SINGLE_PRECISION=SINGLE_PRECISION, VERBOSE_LEVEL=VERBOSE_LEVEL)
 
         if VERBOSE_LEVEL in [1, 2]:
             _message = 'Function Compilations of SFFT-SUBTRACTION TAKES [%.3f s]' %(time.time() - Tcomp_start)
