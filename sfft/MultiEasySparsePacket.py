@@ -26,7 +26,8 @@ class MultiEasy_SparsePacket:
         XY_PriorSelect_Queue=[], Hough_MINFR=0.1, Hough_PeakClip=0.7, BeltHW=0.2, PointSource_MINELLIP=0.3, \
         MatchTol=None, MatchTolFactor=3.0, COARSE_VAR_REJECTION=True, CVREJ_MAGD_THRESH=0.12, \
         ELABO_VAR_REJECTION=True, EVREJ_RATIO_THREH=5.0, EVREJ_SAFE_MAGDEV=0.04, StarExt_iter=4, \
-        XY_PriorBan_Queue=[], PostAnomalyCheck=False, PAC_RATIO_THRESH=5.0, CLEAN_GPU_MEMORY=False, VERBOSE_LEVEL=2):
+        XY_PriorBan_Queue=[], PostAnomalyCheck=False, PAC_RATIO_THRESH=5.0, CLEAN_GPU_MEMORY=False, \
+        SINGLE_PRECISION=False, VERBOSE_LEVEL=2):
 
         """
         # NOTE: This function is to perform Sparse-Flavor SFFT for multiple tasks:
@@ -299,6 +300,7 @@ class MultiEasy_SparsePacket:
         self.KerPolyOrder = KerPolyOrder
         self.BGPolyOrder = BGPolyOrder
         self.ConstPhotRatio = ConstPhotRatio
+        self.SINGLE_PRECISION = SINGLE_PRECISION
         self.MaskSatContam = MaskSatContam
         
         self.GAIN_KEY = GAIN_KEY
@@ -599,7 +601,7 @@ class MultiEasy_SparsePacket:
                             SFFTConfig = SingleSFFTConfigure.SSC(NX=PixA_REF.shape[0], NY=PixA_REF.shape[1], \
                                 KerHW=KerHW, KerPolyOrder=self.KerPolyOrder, BGPolyOrder=self.BGPolyOrder, \
                                 ConstPhotRatio=self.ConstPhotRatio, BACKEND_4SUBTRACT=BACKEND_4SUBTRACT, \
-                                VERBOSE_LEVEL=self.VERBOSE_LEVEL)
+                                SINGLE_PRECISION=self.SINGLE_PRECISION, VERBOSE_LEVEL=self.VERBOSE_LEVEL)
 
                             if self.VERBOSE_LEVEL in [1, 2]:
                                 _message = 'THREAD-4SUBTRACT-[%d] & TASK-[%d]: ' %(INDEX_THREAD_4SUBTRACT, taskidx_acquired)

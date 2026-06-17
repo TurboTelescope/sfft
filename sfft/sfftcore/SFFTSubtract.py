@@ -16,7 +16,7 @@ class ElementalSFFTSubtract_Cupy:
             """
             # NOTE: cupy/numpy (moderately/extremely) slow version has been DEPRECATED!
             Solution_GPU = cp.linalg.solve(LHMAT_GPU, RHb_GPU)
-            Solution_GPU = cp.array(np.linalg.solve(cp.asnumpy(LHMAT_GPU), cp.asnumpy(RHb_GPU)), dtype=np.float64)
+            Solution_GPU = cp.array(np.linalg.solve(cp.asnumpy(LHMAT_GPU), cp.asnumpy(RHb_GPU)), dtype=REAL_DTYPE)
             """
             lu_piv_GPU = cpx_linalg.lu_factor(LHMAT_GPU, overwrite_a=False, check_finite=True)
             Solution_GPU = cpx_linalg.lu_solve(lu_piv_GPU, RHb_GPU)
@@ -30,6 +30,9 @@ class ElementalSFFTSubtract_Cupy:
                    %(SFFTConfig[0]['DK'], SFFTConfig[0]['DB'], SFFTConfig[0]['w0']))
 
         SFFTParam_dict, SFFTModule_dict = SFFTConfig
+        SINGLE_PRECISION = SFFTParam_dict.get('SINGLE_PRECISION', False)
+        REAL_DTYPE = np.float32 if SINGLE_PRECISION else np.float64
+        COMPLEX_DTYPE = np.complex64 if SINGLE_PRECISION else np.complex128
         N0, N1 = SFFTParam_dict['N0'], SFFTParam_dict['N1']
         w0, w1 = SFFTParam_dict['w0'], SFFTParam_dict['w1']
         DK, DB = SFFTParam_dict['DK'], SFFTParam_dict['DB']
@@ -92,14 +95,14 @@ class ElementalSFFTSubtract_Cupy:
         t0 = time.time()
         # * Read input images as C-order arrays
         if not PixA_I.flags['C_CONTIGUOUS']:
-            PixA_I = np.ascontiguousarray(PixA_I, np.float64)
+            PixA_I = np.ascontiguousarray(PixA_I, REAL_DTYPE)
             PixA_I_GPU = cp.array(PixA_I)
-        else: PixA_I_GPU = cp.array(PixA_I.astype(np.float64))
+        else: PixA_I_GPU = cp.array(PixA_I.astype(REAL_DTYPE))
         
         if not PixA_J.flags['C_CONTIGUOUS']:
-            PixA_J = np.ascontiguousarray(PixA_J, np.float64)
+            PixA_J = np.ascontiguousarray(PixA_J, REAL_DTYPE)
             PixA_J_GPU = cp.array(PixA_J)
-        else: PixA_J_GPU = cp.array(PixA_J.astype(np.float64))
+        else: PixA_J_GPU = cp.array(PixA_J.astype(REAL_DTYPE))
         dt0 = time.time() - t0
 
         # * Symbol Convention NOTE
@@ -113,16 +116,16 @@ class ElementalSFFTSubtract_Cupy:
         t1 = time.time()
         PixA_X_GPU = cp.zeros((N0, N1), dtype=np.int32)      # row index, [0, N0)
         PixA_Y_GPU = cp.zeros((N0, N1), dtype=np.int32)      # column index, [0, N1)
-        PixA_CX_GPU = cp.zeros((N0, N1), dtype=np.float64)   # coordinate.x
-        PixA_CY_GPU = cp.zeros((N0, N1), dtype=np.float64)   # coordinate.y 
+        PixA_CX_GPU = cp.zeros((N0, N1), dtype=REAL_DTYPE)   # coordinate.x
+        PixA_CY_GPU = cp.zeros((N0, N1), dtype=REAL_DTYPE)   # coordinate.y 
 
         _module = SFFTModule_dict['SpatialCoor']
         _func = _module.get_function('kmain')
         _func(args=(PixA_X_GPU, PixA_Y_GPU, PixA_CX_GPU, PixA_CY_GPU), block=TpB_PIX, grid=BpG_PIX)
 
         # * Spatial Polynomial terms Iij, Tpq
-        SPixA_Iij_GPU = cp.zeros((Fij, N0, N1), dtype=np.float64)
-        SPixA_Tpq_GPU = cp.zeros((Fpq, N0, N1), dtype=np.float64)
+        SPixA_Iij_GPU = cp.zeros((Fij, N0, N1), dtype=REAL_DTYPE)
+        SPixA_Tpq_GPU = cp.zeros((Fpq, N0, N1), dtype=REAL_DTYPE)
 
         _module = SFFTModule_dict['SpatialPoly']
         _func = _module.get_function('kmain')
@@ -143,19 +146,19 @@ class ElementalSFFTSubtract_Cupy:
         """
 
         # * Make DFT of J, Iij, Tpq and their conjugates
-        PixA_FJ_GPU = cp.empty((N0, N1), dtype=np.complex128)
-        PixA_FJ_GPU[:, :] = PixA_J_GPU.astype(np.complex128)
+        PixA_FJ_GPU = cp.empty((N0, N1), dtype=COMPLEX_DTYPE)
+        PixA_FJ_GPU[:, :] = PixA_J_GPU.astype(COMPLEX_DTYPE)
         PixA_FJ_GPU[:, :] = cp.fft.fft2(PixA_FJ_GPU)
         PixA_FJ_GPU[:, :] *= SCALE
 
-        SPixA_FIij_GPU = cp.empty((Fij, N0, N1), dtype=np.complex128)
-        SPixA_FIij_GPU[:, :, :] = SPixA_Iij_GPU.astype(np.complex128)
+        SPixA_FIij_GPU = cp.empty((Fij, N0, N1), dtype=COMPLEX_DTYPE)
+        SPixA_FIij_GPU[:, :, :] = SPixA_Iij_GPU.astype(COMPLEX_DTYPE)
         for k in range(Fij): 
             SPixA_FIij_GPU[k: k+1] = cp.fft.fft2(SPixA_FIij_GPU[k: k+1])
         SPixA_FIij_GPU[:, :] *= SCALE
 
-        SPixA_FTpq_GPU = cp.empty((Fpq, N0, N1), dtype=np.complex128)
-        SPixA_FTpq_GPU[:, :, :] = SPixA_Tpq_GPU.astype(np.complex128)
+        SPixA_FTpq_GPU = cp.empty((Fpq, N0, N1), dtype=COMPLEX_DTYPE)
+        SPixA_FTpq_GPU[:, :, :] = SPixA_Tpq_GPU.astype(COMPLEX_DTYPE)
         for k in range(Fpq): 
             SPixA_FTpq_GPU[k: k+1] = cp.fft.fft2(SPixA_FTpq_GPU[k: k+1])
         SPixA_FTpq_GPU[:, :] *= SCALE
@@ -188,7 +191,7 @@ class ElementalSFFTSubtract_Cupy:
         
         if SFFTSolution is not None:
             Solution = SFFTSolution 
-            Solution_GPU = cp.array(Solution.astype(np.float64))
+            Solution_GPU = cp.array(Solution.astype(REAL_DTYPE))
             a_ijab_GPU = Solution_GPU[: Fijab]
             b_pq_GPU = Solution_GPU[Fijab: ]
 
@@ -217,8 +220,8 @@ class ElementalSFFTSubtract_Cupy:
             BpG_DEL0, TpB_DEL0 = GPUManage(Fpq)
             BpG_DEL, TpB_DEL = (BpG_DEL0, 1), (TpB_DEL0, 1, 1)
 
-            LHMAT_GPU = cp.empty((NEQ, NEQ), dtype=np.float64)
-            RHb_GPU = cp.empty(NEQ, dtype=np.float64)
+            LHMAT_GPU = cp.empty((NEQ, NEQ), dtype=REAL_DTYPE)
+            RHb_GPU = cp.empty(NEQ, dtype=REAL_DTYPE)
             t3 = time.time()
 
             # * -- -- -- -- -- -- -- -- Establish Linear System through 𝛀  -- -- -- -- -- -- -- -- *
@@ -226,7 +229,7 @@ class ElementalSFFTSubtract_Cupy:
             # a. Hadamard Product for 𝛀 [HpOMG]
             _module = SFFTModule_dict['HadProd_OMG']
             _func = _module.get_function('kmain')
-            HpOMG_GPU = cp.empty((FOMG, N0, N1), dtype=np.complex128)
+            HpOMG_GPU = cp.empty((FOMG, N0, N1), dtype=COMPLEX_DTYPE)
             _func(args=(SREF_iji0j0_GPU, SPixA_FIij_GPU, SPixA_CFIij_GPU, HpOMG_GPU), \
                 block=TpB_PIX, grid=BpG_PIX)
 
@@ -235,7 +238,7 @@ class ElementalSFFTSubtract_Cupy:
                 HpOMG_GPU[k: k+1] = cp.fft.fft2(HpOMG_GPU[k: k+1])
             HpOMG_GPU *= SCALE
 
-            PreOMG_GPU = cp.empty((FOMG, N0, N1), dtype=np.float64)
+            PreOMG_GPU = cp.empty((FOMG, N0, N1), dtype=REAL_DTYPE)
             PreOMG_GPU[:, :, :] = HpOMG_GPU.real
             PreOMG_GPU[:, :, :] *= SCALE
             del HpOMG_GPU
@@ -255,7 +258,7 @@ class ElementalSFFTSubtract_Cupy:
             # a. Hadamard Product for 𝜦 [HpGAM]
             _module = SFFTModule_dict['HadProd_GAM']
             _func = _module.get_function('kmain')
-            HpGAM_GPU = cp.empty((FGAM, N0, N1), dtype=np.complex128)
+            HpGAM_GPU = cp.empty((FGAM, N0, N1), dtype=COMPLEX_DTYPE)
             _func(args=(SREF_ijpq_GPU, SPixA_FIij_GPU, SPixA_CFTpq_GPU, HpGAM_GPU), \
                 block=TpB_PIX, grid=BpG_PIX)
 
@@ -264,7 +267,7 @@ class ElementalSFFTSubtract_Cupy:
                 HpGAM_GPU[k: k+1] = cp.fft.fft2(HpGAM_GPU[k: k+1])
             HpGAM_GPU *= SCALE
 
-            PreGAM_GPU = cp.empty((FGAM, N0, N1), dtype=np.float64)
+            PreGAM_GPU = cp.empty((FGAM, N0, N1), dtype=REAL_DTYPE)
             PreGAM_GPU[:, :, :] = HpGAM_GPU.real
             del HpGAM_GPU
 
@@ -283,7 +286,7 @@ class ElementalSFFTSubtract_Cupy:
             # a. Hadamard Product for 𝜳  [HpPSI]
             _module = SFFTModule_dict['HadProd_PSI']
             _func = _module.get_function('kmain')
-            HpPSI_GPU = cp.empty((FPSI, N0, N1), dtype=np.complex128)
+            HpPSI_GPU = cp.empty((FPSI, N0, N1), dtype=COMPLEX_DTYPE)
             _func(args=(SREF_pqij_GPU, SPixA_CFIij_GPU, SPixA_FTpq_GPU, HpPSI_GPU), \
                 block=TpB_PIX, grid=BpG_PIX)
 
@@ -292,7 +295,7 @@ class ElementalSFFTSubtract_Cupy:
                 HpPSI_GPU[k: k+1] = cp.fft.fft2(HpPSI_GPU[k: k+1])
             HpPSI_GPU *= SCALE
 
-            PrePSI_GPU = cp.empty((FPSI, N0, N1), dtype=np.float64)
+            PrePSI_GPU = cp.empty((FPSI, N0, N1), dtype=REAL_DTYPE)
             PrePSI_GPU[:, :, :] = HpPSI_GPU.real
             del HpPSI_GPU
 
@@ -311,7 +314,7 @@ class ElementalSFFTSubtract_Cupy:
             # a. Hadamard Product for 𝚽  [HpPHI]
             _module = SFFTModule_dict['HadProd_PHI']
             _func = _module.get_function('kmain')
-            HpPHI_GPU = cp.empty((FPHI, N0, N1), dtype=np.complex128)
+            HpPHI_GPU = cp.empty((FPHI, N0, N1), dtype=COMPLEX_DTYPE)
             _func(args=(SREF_pqp0q0_GPU, SPixA_FTpq_GPU, SPixA_CFTpq_GPU, HpPHI_GPU), \
                 block=TpB_PIX, grid=BpG_PIX)
 
@@ -320,7 +323,7 @@ class ElementalSFFTSubtract_Cupy:
                 HpPHI_GPU[k: k+1] = cp.fft.fft2(HpPHI_GPU[k: k+1])
             HpPHI_GPU *= SCALE
 
-            PrePHI_GPU = cp.empty((FPHI, N0, N1), dtype=np.float64)
+            PrePHI_GPU = cp.empty((FPHI, N0, N1), dtype=REAL_DTYPE)
             PrePHI_GPU[:, :, :] = HpPHI_GPU.real
             PrePHI_GPU[:, :, :] *= SCALE_L
             del HpPHI_GPU
@@ -339,13 +342,13 @@ class ElementalSFFTSubtract_Cupy:
             # a1. Hadamard Product for 𝚯  [HpTHE]
             _module = SFFTModule_dict['HadProd_THE']
             _func = _module.get_function('kmain')
-            HpTHE_GPU = cp.empty((FTHE, N0, N1), dtype=np.complex128)
+            HpTHE_GPU = cp.empty((FTHE, N0, N1), dtype=COMPLEX_DTYPE)
             _func(args=(SPixA_FIij_GPU, PixA_CFJ_GPU, HpTHE_GPU), block=TpB_PIX, grid=BpG_PIX)
 
             # a2. Hadamard Product for 𝚫  [HpDEL]
             _module = SFFTModule_dict['HadProd_DEL']
             _func = _module.get_function('kmain')
-            HpDEL_GPU = cp.empty((FDEL, N0, N1), dtype=np.complex128)
+            HpDEL_GPU = cp.empty((FDEL, N0, N1), dtype=COMPLEX_DTYPE)
             _func(args=(SPixA_FTpq_GPU, PixA_CFJ_GPU, HpDEL_GPU), block=TpB_PIX, grid=BpG_PIX)
 
             # b1. PreTHE = 1 * Re[DFT(HpTHE)]
@@ -358,11 +361,11 @@ class ElementalSFFTSubtract_Cupy:
                 HpDEL_GPU[k: k+1] = cp.fft.fft2(HpDEL_GPU[k: k+1])
             HpDEL_GPU[:, :, :] *= SCALE
 
-            PreTHE_GPU = cp.empty((FTHE, N0, N1), dtype=np.float64)
+            PreTHE_GPU = cp.empty((FTHE, N0, N1), dtype=REAL_DTYPE)
             PreTHE_GPU[:, :, :] = HpTHE_GPU.real
             del HpTHE_GPU
             
-            PreDEL_GPU = cp.empty((FDEL, N0, N1), dtype=np.float64)
+            PreDEL_GPU = cp.empty((FDEL, N0, N1), dtype=REAL_DTYPE)
             PreDEL_GPU[:, :, :] = HpDEL_GPU.real
             PreDEL_GPU[:, :, :] *= SCALE_L
             del HpDEL_GPU
@@ -390,7 +393,7 @@ class ElementalSFFTSubtract_Cupy:
                 _func = _module.get_function('kmain')
                 BpG_FSfree_PA, TpB_FSfree_PA = GPUManage(NEQ_FSfree)     # Per Axis
                 BpG_FSfree, TpB_FSfree = (BpG_FSfree_PA, BpG_FSfree_PA), (TpB_FSfree_PA, TpB_FSfree_PA, 1)
-                LHMAT_FSfree_GPU = cp.empty((NEQ_FSfree, NEQ_FSfree), dtype=np.float64)
+                LHMAT_FSfree_GPU = cp.empty((NEQ_FSfree, NEQ_FSfree), dtype=REAL_DTYPE)
                 _func(args=(LHMAT_GPU, IDX_nFS_GPU, LHMAT_FSfree_GPU), block=TpB_FSfree, grid=BpG_FSfree)
 
             t8 = time.time()
@@ -404,7 +407,7 @@ class ElementalSFFTSubtract_Cupy:
                 _module = SFFTModule_dict['Extend_Solution']
                 _func = _module.get_function('kmain')
                 BpG_ES, TpB_ES = (BpG_FSfree_PA, 1), (TpB_FSfree_PA, 1, 1)
-                Solution_GPU = cp.zeros(NEQ, dtype=np.float64)
+                Solution_GPU = cp.zeros(NEQ, dtype=REAL_DTYPE)
                 _func(args=(Solution_FSfree_GPU, IDX_nFS_GPU, Solution_GPU), block=TpB_ES, grid=BpG_ES)
             
             a_ijab_GPU = Solution_GPU[: Fijab]
@@ -430,10 +433,10 @@ class ElementalSFFTSubtract_Cupy:
             tc = time.time()
             t9 = time.time()
             # Calculate Kab components
-            Wl_GPU = cp.exp((-2j*np.pi/N0) * PixA_X_GPU.astype(np.float64))    # row index l, [0, N0)
-            Wm_GPU = cp.exp((-2j*np.pi/N1) * PixA_Y_GPU.astype(np.float64))    # column index m, [0, N1)
-            Kab_Wla_GPU = cp.empty((L0, N0, N1), dtype=np.complex128)
-            Kab_Wmb_GPU = cp.empty((L1, N0, N1), dtype=np.complex128)
+            Wl_GPU = cp.exp((-2j*np.pi/N0) * PixA_X_GPU.astype(REAL_DTYPE))    # row index l, [0, N0)
+            Wm_GPU = cp.exp((-2j*np.pi/N1) * PixA_Y_GPU.astype(REAL_DTYPE))    # column index m, [0, N1)
+            Kab_Wla_GPU = cp.empty((L0, N0, N1), dtype=COMPLEX_DTYPE)
+            Kab_Wmb_GPU = cp.empty((L1, N0, N1), dtype=COMPLEX_DTYPE)
 
             if w0 == w1:
                 wx = w0   # a little bit faster
@@ -451,9 +454,9 @@ class ElementalSFFTSubtract_Cupy:
             # Construct Difference in Fourier Space
             _module = SFFTModule_dict['Construct_FDIFF']
             _func = _module.get_function('kmain')     
-            PixA_FDIFF_GPU = cp.empty((N0, N1), dtype=np.complex128)
-            _func(args=(SREF_ijab_GPU, REF_ab_GPU, a_ijab_GPU.astype(np.complex128), \
-                SPixA_FIij_GPU, Kab_Wla_GPU, Kab_Wmb_GPU, b_pq_GPU.astype(np.complex128), \
+            PixA_FDIFF_GPU = cp.empty((N0, N1), dtype=COMPLEX_DTYPE)
+            _func(args=(SREF_ijab_GPU, REF_ab_GPU, a_ijab_GPU.astype(COMPLEX_DTYPE), \
+                SPixA_FIij_GPU, Kab_Wla_GPU, Kab_Wmb_GPU, b_pq_GPU.astype(COMPLEX_DTYPE), \
                 SPixA_FTpq_GPU, PixA_FJ_GPU, PixA_FDIFF_GPU), block=TpB_PIX, grid=BpG_PIX)
             
             # Get Difference & Reconstructed Images
@@ -490,6 +493,9 @@ class ElementalSFFTSubtract_Numpy:
                    %(SFFTConfig[0]['DK'], SFFTConfig[0]['DB'], SFFTConfig[0]['w0']))
 
         SFFTParam_dict, SFFTModule_dict = SFFTConfig
+        SINGLE_PRECISION = SFFTParam_dict.get('SINGLE_PRECISION', False)
+        REAL_DTYPE = np.float32 if SINGLE_PRECISION else np.float64
+        COMPLEX_DTYPE = np.complex64 if SINGLE_PRECISION else np.complex128
         N0, N1 = SFFTParam_dict['N0'], SFFTParam_dict['N1']
         w0, w1 = SFFTParam_dict['w0'], SFFTParam_dict['w1']
         DK, DB = SFFTParam_dict['DK'], SFFTParam_dict['DB']
@@ -534,12 +540,12 @@ class ElementalSFFTSubtract_Numpy:
         t0 = time.time()
         # * Read input images as C-order arrays
         if not PixA_I.flags['C_CONTIGUOUS']:
-            PixA_I = np.ascontiguousarray(PixA_I, np.float64)
-        else: PixA_I = PixA_I.astype(np.float64)
+            PixA_I = np.ascontiguousarray(PixA_I, REAL_DTYPE)
+        else: PixA_I = PixA_I.astype(REAL_DTYPE)
 
         if not PixA_J.flags['C_CONTIGUOUS']:
-            PixA_J = np.ascontiguousarray(PixA_J, np.float64)
-        else: PixA_J = PixA_J.astype(np.float64)
+            PixA_J = np.ascontiguousarray(PixA_J, REAL_DTYPE)
+        else: PixA_J = PixA_J.astype(REAL_DTYPE)
         dt0 = time.time() - t0
 
         # * Symbol Convention NOTE
@@ -553,15 +559,15 @@ class ElementalSFFTSubtract_Numpy:
         t1 = time.time()
         PixA_X = np.zeros((N0, N1), dtype=np.int32)      # row index, [0, N0)
         PixA_Y = np.zeros((N0, N1), dtype=np.int32)      # column index, [0, N1)
-        PixA_CX = np.zeros((N0, N1), dtype=np.float64)   # coordinate.x
-        PixA_CY = np.zeros((N0, N1), dtype=np.float64)   # coordinate.y 
+        PixA_CX = np.zeros((N0, N1), dtype=REAL_DTYPE)   # coordinate.x
+        PixA_CY = np.zeros((N0, N1), dtype=REAL_DTYPE)   # coordinate.y 
 
         _func = SFFTModule_dict['SpatialCoor']
         _func(PixA_X=PixA_X, PixA_Y=PixA_Y, PixA_CX=PixA_CX, PixA_CY=PixA_CY)
 
         # * Spatial Polynomial terms Iij, Tpq
-        SPixA_Iij = np.zeros((Fij, N0, N1), dtype=np.float64)
-        SPixA_Tpq = np.zeros((Fpq, N0, N1), dtype=np.float64)
+        SPixA_Iij = np.zeros((Fij, N0, N1), dtype=REAL_DTYPE)
+        SPixA_Tpq = np.zeros((Fpq, N0, N1), dtype=REAL_DTYPE)
 
         _func = SFFTModule_dict['SpatialPoly']
         _func(REF_ij=REF_ij, REF_pq=REF_pq, PixA_CX=PixA_CX, PixA_CY=PixA_CY, \
@@ -570,10 +576,10 @@ class ElementalSFFTSubtract_Numpy:
 
         t2 = time.time()
         Batchsize = 1 + Fij + Fpq
-        _SPixA_FFT = np.empty((Batchsize, N0, N1), dtype=np.complex128)
-        _SPixA_FFT[0, :, :] = PixA_J.astype(np.complex128)
-        _SPixA_FFT[1: Fij+1, :, :] = SPixA_Iij.astype(np.complex128)
-        _SPixA_FFT[Fij+1:, :, :] = SPixA_Tpq.astype(np.complex128)
+        _SPixA_FFT = np.empty((Batchsize, N0, N1), dtype=COMPLEX_DTYPE)
+        _SPixA_FFT[0, :, :] = PixA_J.astype(COMPLEX_DTYPE)
+        _SPixA_FFT[1: Fij+1, :, :] = SPixA_Iij.astype(COMPLEX_DTYPE)
+        _SPixA_FFT[Fij+1:, :, :] = SPixA_Tpq.astype(COMPLEX_DTYPE)
 
         #_SPixA_FFT = SCALE * np.fft.fft2(_SPixA_FFT)
         _SPixA_FFT = SCALE * pyfftw.interfaces.numpy_fft.fft2(_SPixA_FFT)
@@ -606,22 +612,22 @@ class ElementalSFFTSubtract_Numpy:
         #    c. Considering the subscripted variables, HpGreek / PreGreek is Complex / Real 3D with shape (F_Greek, N0, N1).
 
         if SFFTSolution is not None:
-            Solution = SFFTSolution.astype(np.float64)
+            Solution = SFFTSolution.astype(REAL_DTYPE)
             a_ijab = Solution[: Fijab]
             b_pq = Solution[Fijab: ]
             
         if SFFTSolution is None:
             tb = time.time()    
             
-            LHMAT = np.empty((NEQ, NEQ), dtype=np.float64)
-            RHb = np.empty(NEQ, dtype=np.float64)
+            LHMAT = np.empty((NEQ, NEQ), dtype=REAL_DTYPE)
+            RHb = np.empty(NEQ, dtype=REAL_DTYPE)
             t3 = time.time()
             
             # * -- -- -- -- -- -- -- -- Establish Linear System through 𝛀  -- -- -- -- -- -- -- -- *
 
             # a. Hadamard Product for 𝛀 [HpOMG]
             _func = SFFTModule_dict['HadProd_OMG']
-            HpOMG = np.empty((FOMG, N0, N1), dtype=np.complex128)
+            HpOMG = np.empty((FOMG, N0, N1), dtype=COMPLEX_DTYPE)
             HpOMG = _func(SREF_iji0j0=SREF_iji0j0, SPixA_FIij=SPixA_FIij, SPixA_CFIij=SPixA_CFIij, HpOMG=HpOMG)
             
             # b. PreOMG = SCALE * Re[DFT(HpOMG)]
@@ -641,7 +647,7 @@ class ElementalSFFTSubtract_Numpy:
 
             # a. Hadamard Product for 𝜦 [HpGAM]
             _func = SFFTModule_dict['HadProd_GAM']
-            HpGAM = np.empty((FGAM, N0, N1), dtype=np.complex128)
+            HpGAM = np.empty((FGAM, N0, N1), dtype=COMPLEX_DTYPE)
             HpGAM = _func(SREF_ijpq=SREF_ijpq, SPixA_FIij=SPixA_FIij, SPixA_CFTpq=SPixA_CFTpq, HpGAM=HpGAM)
 
             # b. PreGAM = 1 * Re[DFT(HpGAM)]
@@ -660,7 +666,7 @@ class ElementalSFFTSubtract_Numpy:
 
             # a. Hadamard Product for 𝜳  [HpPSI]
             _func = SFFTModule_dict['HadProd_PSI']
-            HpPSI = np.empty((FPSI, N0, N1), dtype=np.complex128)
+            HpPSI = np.empty((FPSI, N0, N1), dtype=COMPLEX_DTYPE)
             HpPSI = _func(SREF_pqij=SREF_pqij, SPixA_CFIij=SPixA_CFIij, SPixA_FTpq=SPixA_FTpq, HpPSI=HpPSI)
             
             # b. PrePSI = 1 * Re[DFT(HpPSI)]
@@ -679,7 +685,7 @@ class ElementalSFFTSubtract_Numpy:
             
             # a. Hadamard Product for 𝚽  [HpPHI]
             _func = SFFTModule_dict['HadProd_PHI']
-            HpPHI = np.empty((FPHI, N0, N1), dtype=np.complex128)
+            HpPHI = np.empty((FPHI, N0, N1), dtype=COMPLEX_DTYPE)
             HpPHI = _func(SREF_pqp0q0=SREF_pqp0q0, SPixA_FTpq=SPixA_FTpq, SPixA_CFTpq=SPixA_CFTpq, HpPHI=HpPHI)
 
             # b. PrePHI = SCALE_L * Re[DFT(HpPHI)]
@@ -700,12 +706,12 @@ class ElementalSFFTSubtract_Numpy:
 
             # a1. Hadamard Product for 𝚯  [HpTHE]
             _func = SFFTModule_dict['HadProd_THE']
-            HpTHE = np.empty((FTHE, N0, N1), dtype=np.complex128)
+            HpTHE = np.empty((FTHE, N0, N1), dtype=COMPLEX_DTYPE)
             HpTHE = _func(SPixA_FIij=SPixA_FIij, PixA_CFJ=PixA_CFJ, HpTHE=HpTHE)
 
             # a2. Hadamard Product for 𝚫  [HpDEL]
             _func = SFFTModule_dict['HadProd_DEL']
-            HpDEL = np.empty((FDEL, N0, N1), dtype=np.complex128)
+            HpDEL = np.empty((FDEL, N0, N1), dtype=COMPLEX_DTYPE)
             HpDEL = _func(SPixA_FTpq=SPixA_FTpq, PixA_CFJ=PixA_CFJ, HpDEL=HpDEL)
             
             # b1. PreTHE = 1 * Re[DFT(HpTHE)]
@@ -735,20 +741,20 @@ class ElementalSFFTSubtract_Numpy:
             if ConstPhotRatio:
                 RHb_FSfree = RHb[IDX_nFS]
                 _func = SFFTModule_dict['Remove_LSFStripes']
-                LHMAT_FSfree = np.empty((NEQ_FSfree, NEQ_FSfree), dtype=np.float64)
+                LHMAT_FSfree = np.empty((NEQ_FSfree, NEQ_FSfree), dtype=REAL_DTYPE)
                 LHMAT_FSfree = _func(LHMAT=LHMAT, IDX_nFS=IDX_nFS, LHMAT_FSfree=LHMAT_FSfree)
 
             t8 = time.time()
             # * -- -- -- -- -- -- -- -- Solve Linear System  -- -- -- -- -- -- -- -- *
             if not ConstPhotRatio:
-                Solution = np.linalg.solve(LHMAT, RHb).astype(np.float64)
+                Solution = np.linalg.solve(LHMAT, RHb).astype(REAL_DTYPE)
 
             if ConstPhotRatio:
-                Solution_FSfree = np.linalg.solve(LHMAT_FSfree, RHb_FSfree).astype(np.float64)
+                Solution_FSfree = np.linalg.solve(LHMAT_FSfree, RHb_FSfree).astype(REAL_DTYPE)
 
                 # Extend the solution to be consistent form
                 _func = SFFTModule_dict['Extend_Solution']
-                Solution = np.zeros(NEQ, dtype=np.float64)
+                Solution = np.zeros(NEQ, dtype=REAL_DTYPE)
                 Solution = _func(Solution_FSfree=Solution_FSfree, IDX_nFS=IDX_nFS, Solution=Solution)
 
             a_ijab = Solution[: Fijab]
@@ -775,10 +781,10 @@ class ElementalSFFTSubtract_Numpy:
             tc = time.time()
             t9 = time.time()
             # Calculate Kab components
-            Wl = np.exp((-2j*np.pi/N0) * PixA_X.astype(np.float64))    # row index l, [0, N0)
-            Wm = np.exp((-2j*np.pi/N1) * PixA_Y.astype(np.float64))    # column index m, [0, N1)
-            Kab_Wla = np.empty((L0, N0, N1), dtype=np.complex128)
-            Kab_Wmb = np.empty((L1, N0, N1), dtype=np.complex128)
+            Wl = np.exp((-2j*np.pi/N0) * PixA_X.astype(REAL_DTYPE))    # row index l, [0, N0)
+            Wm = np.exp((-2j*np.pi/N1) * PixA_Y.astype(REAL_DTYPE))    # column index m, [0, N1)
+            Kab_Wla = np.empty((L0, N0, N1), dtype=COMPLEX_DTYPE)
+            Kab_Wmb = np.empty((L1, N0, N1), dtype=COMPLEX_DTYPE)
 
             if w0 == w1:
                 wx = w0   # a little bit faster
@@ -795,9 +801,9 @@ class ElementalSFFTSubtract_Numpy:
             t10 = time.time()
             # Construct Difference in Fourier Space
             _func = SFFTModule_dict['Construct_FDIFF']   
-            PixA_FDIFF = np.empty((N0, N1), dtype=np.complex128)
-            PixA_FDIFF = _func(SREF_ijab=SREF_ijab, REF_ab=REF_ab, a_ijab=a_ijab.astype(np.complex128), \
-                SPixA_FIij=SPixA_FIij, Kab_Wla=Kab_Wla, Kab_Wmb=Kab_Wmb, b_pq=b_pq.astype(np.complex128), \
+            PixA_FDIFF = np.empty((N0, N1), dtype=COMPLEX_DTYPE)
+            PixA_FDIFF = _func(SREF_ijab=SREF_ijab, REF_ab=REF_ab, a_ijab=a_ijab.astype(COMPLEX_DTYPE), \
+                SPixA_FIij=SPixA_FIij, Kab_Wla=Kab_Wla, Kab_Wmb=Kab_Wmb, b_pq=b_pq.astype(COMPLEX_DTYPE), \
                 SPixA_FTpq=SPixA_FTpq, PixA_FJ=PixA_FJ, PixA_FDIFF=PixA_FDIFF)
 
             # Get Difference & Reconstructed Images
@@ -913,8 +919,9 @@ class GeneralSFFTSubtract:
             Fpq = int((DB+1)*(DB+2)/2)
             tSolution[-Fpq:] = 0.0
 
-            _tmpI = ContamMask_I.astype(np.float64)
-            _tmpJ = np.zeros(PixA_J.shape).astype(np.float64)
+            REAL_DTYPE = np.float32 if SFFTConfig[0].get('SINGLE_PRECISION', False) else np.float64
+            _tmpI = ContamMask_I.astype(REAL_DTYPE)
+            _tmpJ = np.zeros(PixA_J.shape).astype(REAL_DTYPE)
             _tmpD = ElementalSFFTSubtract.ESS(PixA_I=_tmpI, PixA_J=_tmpJ, \
                 SFFTConfig=SFFTConfig, SFFTSolution=tSolution, Subtract=True, BACKEND_4SUBTRACT=BACKEND_4SUBTRACT, \
                 NUM_CPU_THREADS_4SUBTRACT=NUM_CPU_THREADS_4SUBTRACT, VERBOSE_LEVEL=VERBOSE_LEVEL)[1]

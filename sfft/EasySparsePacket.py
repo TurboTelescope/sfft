@@ -24,8 +24,10 @@ class Easy_SparsePacket:
         XY_PriorSelect=None, Hough_MINFR=0.1, Hough_PeakClip=0.7, BeltHW=0.2, PointSource_MINELLIP=0.3, \
         MatchTol=None, MatchTolFactor=3.0, COARSE_VAR_REJECTION=True, CVREJ_MAGD_THRESH=0.12, \
         ELABO_VAR_REJECTION=True, EVREJ_RATIO_THREH=5.0, EVREJ_SAFE_MAGDEV=0.04, StarExt_iter=4, \
-        XY_PriorBan=None, PostAnomalyCheck=False, PAC_RATIO_THRESH=5.0, BACKEND_4SUBTRACT='Cupy', \
-        CUDA_DEVICE_4SUBTRACT='0', NUM_CPU_THREADS_4SUBTRACT=8, VERBOSE_LEVEL=2):
+        XY_PriorBan=None, PostAnomalyCheck=False, PAC_RATIO_THRESH=5.0, \
+        Compute_Scorr=False, FITS_Scorr=None, ScorrAstUncX=0.0, ScorrAstUncY=0.0, \
+        BACKEND_4SUBTRACT='Cupy', \
+        CUDA_DEVICE_4SUBTRACT='0', NUM_CPU_THREADS_4SUBTRACT=8, SINGLE_PRECISION=False, VERBOSE_LEVEL=2):
         
         """
         # NOTE: This function is to Perform Sparse-Flavor SFFT for a single task:
@@ -336,7 +338,7 @@ class Easy_SparsePacket:
         SFFTConfig = SingleSFFTConfigure.SSC(NX=PixA_REF.shape[0], NY=PixA_REF.shape[1], KerHW=KerHW, \
             KerPolyOrder=KerPolyOrder, BGPolyOrder=BGPolyOrder, ConstPhotRatio=ConstPhotRatio, \
             BACKEND_4SUBTRACT=BACKEND_4SUBTRACT, NUM_CPU_THREADS_4SUBTRACT=NUM_CPU_THREADS_4SUBTRACT, \
-            VERBOSE_LEVEL=VERBOSE_LEVEL)
+            SINGLE_PRECISION=SINGLE_PRECISION, VERBOSE_LEVEL=VERBOSE_LEVEL)
         
         if VERBOSE_LEVEL in [1, 2]:
             _message = 'Function Compilations of SFFT-SUBTRACTION '
@@ -597,4 +599,32 @@ class Easy_SparsePacket:
             phdu.data = PixA_Solution.T
             fits.HDUList([phdu]).writeto(FITS_Solution, overwrite=True)
 
-        return PixA_DIFF, SFFTPrepDict, Solution, SFFT_FSCAL_MEAN, SFFT_FSCAL_SIG
+        # * Optionally compute the ZOGY corrected score (Scorr) image
+        #   See Compute_Scorr / FITS_Scorr / ScorrAstUncX / ScorrAstUncY.
+        #   Full ZOGY noise model (source-shot + astrometric terms); the diff PSF and per-pixel
+        #   sigma maps are derived internally from sfft's kernel, the measured FWHM, the input
+        #   images and their header gains.
+        PixA_Scorr = None
+        if Compute_Scorr:
+            from sfft.utils.ScorrCalculator import Scorr_Calculator
+            FWHM_ConvdSide = FWHM_REF if ConvdSide == 'REF' else FWHM_SCI
+            GAIN_REF = float(fits.getheader(FITS_REF, ext=0).get(GAIN_KEY, 1.0))
+            GAIN_SCI = float(fits.getheader(FITS_SCI, ext=0).get(GAIN_KEY, 1.0))
+
+            _, PixA_Scorr = Scorr_Calculator.from_subtraction(PixA_DIFF=PixA_DIFF, \
+                Solution=Solution, SFFTConfig0=SFFTConfig[0], ConvdSide=ConvdSide, \
+                FWHM_ConvdSide=FWHM_ConvdSide, PixA_REF=PixA_REF, PixA_SCI=PixA_SCI, \
+                GAIN_REF=GAIN_REF, GAIN_SCI=GAIN_SCI, dx=ScorrAstUncX, dy=ScorrAstUncY, \
+                VERBOSE_LEVEL=VERBOSE_LEVEL)
+
+            if FITS_Scorr is not None:
+                _hdl = fits.open(FITS_SCI)
+                _hdl[0].data[:, :] = PixA_Scorr.T
+                _hdl[0].header['NAME_REF'] = (pa.basename(FITS_REF), 'MeLOn: SFFT')
+                _hdl[0].header['NAME_SCI'] = (pa.basename(FITS_SCI), 'MeLOn: SFFT')
+                _hdl[0].header['CONVD'] = (ConvdSide, 'MeLOn: SFFT')
+                _hdl[0].header['SCORR'] = (True, 'MeLOn: SFFT ZOGY corrected score (sigma units)')
+                _hdl.writeto(FITS_Scorr, overwrite=True)
+                _hdl.close()
+
+        return PixA_DIFF, SFFTPrepDict, Solution, SFFT_FSCAL_MEAN, SFFT_FSCAL_SIG, PixA_Scorr

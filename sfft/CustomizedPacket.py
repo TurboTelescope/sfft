@@ -13,7 +13,9 @@ class Customized_Packet:
     @staticmethod
     def CP(FITS_REF, FITS_SCI, FITS_mREF, FITS_mSCI, ForceConv, GKerHW, \
         FITS_DIFF=None, FITS_Solution=None, KerPolyOrder=2, BGPolyOrder=2, ConstPhotRatio=True, \
-        BACKEND_4SUBTRACT='Cupy', CUDA_DEVICE_4SUBTRACT='0', NUM_CPU_THREADS_4SUBTRACT=8, VERBOSE_LEVEL=2):
+        Compute_Scorr=False, FITS_Scorr=None, ScorrFWHM=None, ScorrAstUncX=0.0, ScorrAstUncY=0.0, \
+        BACKEND_4SUBTRACT='Cupy', CUDA_DEVICE_4SUBTRACT='0', NUM_CPU_THREADS_4SUBTRACT=8, \
+        SINGLE_PRECISION=False, VERBOSE_LEVEL=2):
         
         """
         * Parameters for Customized SFFT
@@ -66,6 +68,23 @@ class Customized_Packet:
 
         -FITS_Solution [None]               # File path of the solution of the linear system.
                                             # it is an array of (..., a_ijab, ... b_pq, ...).
+
+        # ----------------------------- Scorr (corrected score / detection) image --------------------------------- #
+
+        -Compute_Scorr [False]              # if True, also compute & return a full ZOGY corrected score
+                                            # image (Scorr), in units of sigma, alongside the difference.
+                                            # The diff PSF is built as P_D = K (conv) Gaussian(ScorrFWHM)
+                                            # from sfft's matching kernel; per-pixel sigma maps are derived
+                                            # from the input images and their header gains. Requires ScorrFWHM.
+
+        -ScorrFWHM [None]                   # FWHM (px) of the CONVOLVED side (ForceConv side), used to build
+                                            # the diff PSF. REQUIRED when Compute_Scorr (CP does no FWHM
+                                            # measurement of its own, unlike the Easy packets).
+
+        -FITS_Scorr [None]                  # File path of output Scorr image (only written if Compute_Scorr).
+
+        -ScorrAstUncX [0.0]                 # Astrometric uncertainty (1-sigma, px) in x, for ZOGY's V_ast
+        -ScorrAstUncY [0.0]                 # term. 0.0 disables the astrometric-noise contribution.
 
         # ----------------------------- Miscellaneous --------------------------------- #
         
@@ -134,7 +153,7 @@ class Customized_Packet:
         SFFTConfig = SingleSFFTConfigure.SSC(NX=PixA_REF.shape[0], NY=PixA_REF.shape[1], KerHW=KerHW, \
             KerPolyOrder=KerPolyOrder, BGPolyOrder=BGPolyOrder, ConstPhotRatio=ConstPhotRatio, \
             BACKEND_4SUBTRACT=BACKEND_4SUBTRACT, NUM_CPU_THREADS_4SUBTRACT=NUM_CPU_THREADS_4SUBTRACT, \
-            VERBOSE_LEVEL=VERBOSE_LEVEL)
+            SINGLE_PRECISION=SINGLE_PRECISION, VERBOSE_LEVEL=VERBOSE_LEVEL)
 
         if VERBOSE_LEVEL in [1, 2]:
             _message = 'Function Compilations of SFFT-SUBTRACTION TAKES [%.3f s]' %(time.time() - Tcomp_start)
@@ -215,5 +234,31 @@ class Customized_Packet:
             PixA_Solution = Solution.reshape((-1, 1))
             phdu.data = PixA_Solution.T
             fits.HDUList([phdu]).writeto(FITS_Solution, overwrite=True)
-        
-        return Solution, PixA_DIFF
+
+        # * Optionally compute the corrected score (Scorr) image
+        PixA_Scorr = None
+        if Compute_Scorr:
+            from sfft.utils.ScorrCalculator import Scorr_Calculator
+            if ScorrFWHM is None:
+                raise Exception("MeLOn ERROR: Compute_Scorr in CP requires ScorrFWHM "
+                                "(FWHM of the convolved side, px); CP measures no FWHM of its own.")
+            GAIN_REF = float(fits.getheader(FITS_REF, ext=0).get('GAIN', 1.0))
+            GAIN_SCI = float(fits.getheader(FITS_SCI, ext=0).get('GAIN', 1.0))
+
+            _, PixA_Scorr = Scorr_Calculator.from_subtraction(PixA_DIFF=PixA_DIFF, \
+                Solution=Solution, SFFTConfig0=SFFTConfig[0], ConvdSide=ConvdSide, \
+                FWHM_ConvdSide=ScorrFWHM, PixA_REF=PixA_REF, PixA_SCI=PixA_SCI, \
+                GAIN_REF=GAIN_REF, GAIN_SCI=GAIN_SCI, dx=ScorrAstUncX, dy=ScorrAstUncY, \
+                VERBOSE_LEVEL=VERBOSE_LEVEL)
+
+            if FITS_Scorr is not None:
+                _hdl = fits.open(FITS_SCI)
+                _hdl[0].data[:, :] = PixA_Scorr.T
+                _hdl[0].header['NAME_REF'] = (pa.basename(FITS_REF), 'MeLOn: SFFT')
+                _hdl[0].header['NAME_SCI'] = (pa.basename(FITS_SCI), 'MeLOn: SFFT')
+                _hdl[0].header['CONVD'] = (ConvdSide, 'MeLOn: SFFT')
+                _hdl[0].header['SCORR'] = (True, 'MeLOn: SFFT ZOGY corrected score (sigma units)')
+                _hdl.writeto(FITS_Scorr, overwrite=True)
+                _hdl.close()
+
+        return Solution, PixA_DIFF, PixA_Scorr

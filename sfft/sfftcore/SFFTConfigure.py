@@ -1,14 +1,38 @@
+import re
 import numpy as np
 # version: Feb 5, 2023
 
 __author__ = "Lei Hu <hulei@pmo.ac.cn>"
 __version__ = "v1.4"
 
+def _CastCUDA2SinglePrecision(code):
+    # Convert a double-precision SFFT CUDA source string to single precision.
+    # NOTE: applied to the compiled kernel source ONLY when SINGLE_PRECISION is enabled.
+    code = code.replace('cuDoubleComplex', 'cuFloatComplex')   # also fixes make_cuDoubleComplex
+    code = code.replace('cuCadd(', 'cuCaddf(')
+    code = code.replace('cuCsub(', 'cuCsubf(')
+    code = code.replace('cuCmul(', 'cuCmulf(')
+    code = code.replace('cuCdiv(', 'cuCdivf(')
+    code = code.replace('cuConj(', 'cuConjf(')
+    code = code.replace('cuCreal(', 'cuCrealf(')
+    code = code.replace('cuCimag(', 'cuCimagf(')
+    code = code.replace('cuCabs(', 'cuCabsf(')
+    code = code.replace('pow(', 'powf(')
+    code = code.replace('fmod(', 'fmodf(')
+    code = re.sub(r'\bdouble\b', 'float', code)                # real type: double -> float
+    return code
+
+def _CastNB2SinglePrecision(strdec):
+    # Convert a double-precision numba signature string to single precision.
+    # f8 (float64) -> f4 (float32); c16 (complex128) -> c8 (complex64).
+    return strdec.replace('c16', 'c8').replace('f8', 'f4')
+
 class SingleSFFTConfigure_Cupy:
     @staticmethod
-    def SSCC(NX, NY, KerHW, KerPolyOrder=2, BGPolyOrder=2, ConstPhotRatio=True, VERBOSE_LEVEL=2):
-        
+    def SSCC(NX, NY, KerHW, KerPolyOrder=2, BGPolyOrder=2, ConstPhotRatio=True, SINGLE_PRECISION=False, VERBOSE_LEVEL=2):
+
         import cupy as cp
+        NP_REAL = np.float32 if SINGLE_PRECISION else np.float64    # host scalar real type
         N0, N1 = int(NX), int(NY)
         w0, w1 = int(KerHW), int(KerHW)
         DK, DB = int(KerPolyOrder), int(BGPolyOrder)
@@ -37,8 +61,8 @@ class SingleSFFTConfigure_Cupy:
         Fab = L0 * L1                     # dof for index 𝛼𝛽
         Fij = int((DK+1)*(DK+2)/2)        # dof for matching-kernel polynomial index ij 
         Fpq = int((DB+1)*(DB+2)/2)        # dof for differential-background polynomial index pq 
-        SCALE = np.float64(1/(N0*N1))     # Scale of Image-Size
-        SCALE_L = np.float64(1/SCALE)     # Reciprocal Scale of Image Size
+        SCALE = NP_REAL(1/(N0*N1))     # Scale of Image-Size
+        SCALE_L = NP_REAL(1/SCALE)     # Reciprocal Scale of Image Size
 
         NEQ = Fij*Fab+Fpq                         # Linear-System side-length
         Fijab = Fij * Fab                         # Linear-System Major side-length
@@ -55,6 +79,7 @@ class SingleSFFTConfigure_Cupy:
         SFFTParam_dict['DB'] = DB
         SFFTParam_dict['ConstPhotRatio'] = ConstPhotRatio
         SFFTParam_dict['MaxThreadPerB'] = MaxThreadPerB
+        SFFTParam_dict['SINGLE_PRECISION'] = SINGLE_PRECISION
 
         SFFTParam_dict['L0'] = L0
         SFFTParam_dict['L1'] = L1
@@ -103,6 +128,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
+        if SINGLE_PRECISION: _code = _CastCUDA2SinglePrecision(_code)
         _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=False)
         SFFTModule_dict['SpatialCoor'] = _module
 
@@ -141,6 +167,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
+        if SINGLE_PRECISION: _code = _CastCUDA2SinglePrecision(_code)
         _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=False)
         SFFTModule_dict['SpatialPoly'] = _module
 
@@ -191,6 +218,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
+        if SINGLE_PRECISION: _code = _CastCUDA2SinglePrecision(_code)
         _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=True)
         SFFTModule_dict['HadProd_OMG'] = _module
 
@@ -271,6 +299,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
+        if SINGLE_PRECISION: _code = _CastCUDA2SinglePrecision(_code)
         _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=False)
         SFFTModule_dict['FillLS_OMG'] = _module
 
@@ -322,6 +351,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
+        if SINGLE_PRECISION: _code = _CastCUDA2SinglePrecision(_code)
         _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=True)
         SFFTModule_dict['HadProd_GAM'] = _module
 
@@ -373,6 +403,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
+        if SINGLE_PRECISION: _code = _CastCUDA2SinglePrecision(_code)
         _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=False)
         SFFTModule_dict['FillLS_GAM'] = _module
 
@@ -424,6 +455,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
+        if SINGLE_PRECISION: _code = _CastCUDA2SinglePrecision(_code)
         _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=True)
         SFFTModule_dict['HadProd_PSI'] = _module
 
@@ -475,6 +507,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
+        if SINGLE_PRECISION: _code = _CastCUDA2SinglePrecision(_code)
         _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=False)
         SFFTModule_dict['FillLS_PSI'] = _module
 
@@ -525,6 +558,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
+        if SINGLE_PRECISION: _code = _CastCUDA2SinglePrecision(_code)
         _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=True)
         SFFTModule_dict['HadProd_PHI'] = _module
 
@@ -556,6 +590,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
+        if SINGLE_PRECISION: _code = _CastCUDA2SinglePrecision(_code)
         _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=False)
         SFFTModule_dict['FillLS_PHI'] = _module
 
@@ -583,6 +618,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
+        if SINGLE_PRECISION: _code = _CastCUDA2SinglePrecision(_code)
         _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=True)
         SFFTModule_dict['HadProd_THE'] = _module
 
@@ -630,6 +666,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
+        if SINGLE_PRECISION: _code = _CastCUDA2SinglePrecision(_code)
         _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=False)
         SFFTModule_dict['FillLS_THE'] = _module
 
@@ -658,6 +695,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
+        if SINGLE_PRECISION: _code = _CastCUDA2SinglePrecision(_code)
         _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=True)
         SFFTModule_dict['HadProd_DEL'] = _module
 
@@ -684,6 +722,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
+        if SINGLE_PRECISION: _code = _CastCUDA2SinglePrecision(_code)
         _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=False)
         SFFTModule_dict['FillLS_DEL'] = _module
 
@@ -707,6 +746,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
+        if SINGLE_PRECISION: _code = _CastCUDA2SinglePrecision(_code)
         _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=False)
         SFFTModule_dict['Remove_LSFStripes'] = _module
 
@@ -728,6 +768,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
+        if SINGLE_PRECISION: _code = _CastCUDA2SinglePrecision(_code)
         _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=False)
         SFFTModule_dict['Extend_Solution'] = _module
 
@@ -805,6 +846,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
+        if SINGLE_PRECISION: _code = _CastCUDA2SinglePrecision(_code)
         _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=True)
         SFFTModule_dict['Construct_FDIFF'] = _module
         
@@ -816,11 +858,12 @@ class SingleSFFTConfigure_Cupy:
 
 class SingleSFFTConfigure_Numpy:
     @staticmethod
-    def SSCN(NX, NY, KerHW, KerPolyOrder=2, BGPolyOrder=2, ConstPhotRatio=True, NUM_CPU_THREADS_4SUBTRACT=8, VERBOSE_LEVEL=2):
+    def SSCN(NX, NY, KerHW, KerPolyOrder=2, BGPolyOrder=2, ConstPhotRatio=True, NUM_CPU_THREADS_4SUBTRACT=8, SINGLE_PRECISION=False, VERBOSE_LEVEL=2):
 
         import numba as nb
         nb.set_num_threads = NUM_CPU_THREADS_4SUBTRACT
 
+        NP_REAL = np.float32 if SINGLE_PRECISION else np.float64    # host scalar real type
         N0, N1 = int(NX), int(NY)
         w0, w1 = int(KerHW), int(KerHW)
         DK, DB = int(KerPolyOrder), int(BGPolyOrder)
@@ -845,8 +888,8 @@ class SingleSFFTConfigure_Numpy:
         Fab = L0 * L1                     # dof for index 𝛼𝛽
         Fij = int((DK+1)*(DK+2)/2)        # dof for matching-kernel polynomial index ij 
         Fpq = int((DB+1)*(DB+2)/2)        # dof for differential-background polynomial index pq 
-        SCALE = np.float64(1/(N0*N1))     # Scale of Image-Size
-        SCALE_L = np.float64(1/SCALE)     # Reciprocal Scale of Image Size
+        SCALE = NP_REAL(1/(N0*N1))     # Scale of Image-Size
+        SCALE_L = NP_REAL(1/SCALE)     # Reciprocal Scale of Image Size
 
         NEQ = Fij*Fab+Fpq                         # Linear-System side-length
         Fijab = Fij * Fab                         # Linear-System Major side-length
@@ -862,6 +905,7 @@ class SingleSFFTConfigure_Numpy:
         SFFTParam_dict['DK'] = DK
         SFFTParam_dict['DB'] = DB
         SFFTParam_dict['ConstPhotRatio'] = ConstPhotRatio
+        SFFTParam_dict['SINGLE_PRECISION'] = SINGLE_PRECISION
 
         SFFTParam_dict['L0'] = L0
         SFFTParam_dict['L1'] = L1
@@ -886,7 +930,7 @@ class SingleSFFTConfigure_Numpy:
 
         # ** produce spatial coordinate X/Y/oX/oY-map
         _strdec = 'Tuple((i4[:,:], i4[:,:], f8[:,:], f8[:,:]))(i4[:,:], i4[:,:], f8[:,:], f8[:,:])'
-        @nb.njit(_strdec, parallel=True)
+        @nb.njit(_CastNB2SinglePrecision(_strdec) if SINGLE_PRECISION else _strdec, parallel=True)
         def SpatialCoor(PixA_X, PixA_Y, PixA_CX, PixA_CY):
 
             #assert PixA_X.dtype == np.int32 and PixA_X.shape == (N0, N1)
@@ -908,7 +952,7 @@ class SingleSFFTConfigure_Numpy:
 
         # ** produce Iij, Tpq
         _strdec = 'Tuple((f8[:,:,:], f8[:,:,:]))' + '(i4[:,:], i4[:,:], f8[:,:], f8[:,:], f8[:,:], f8[:,:,:], f8[:,:,:])'
-        @nb.njit(_strdec, parallel=True)
+        @nb.njit(_CastNB2SinglePrecision(_strdec) if SINGLE_PRECISION else _strdec, parallel=True)
         def SpatialPoly(REF_ij, REF_pq, PixA_CX, PixA_CY, PixA_I, SPixA_Iij, SPixA_Tpq):
             
             #assert REF_ij.dtype == np.int32 and REF_ij.shape == (Fij, 2)
@@ -938,7 +982,7 @@ class SingleSFFTConfigure_Numpy:
 
         # ** Hadamard Product [𝛀]
         _strdec = 'c16[:,:,:](i4[:,:], c16[:,:,:], c16[:,:,:], c16[:,:,:])'
-        @nb.njit(_strdec, parallel=True)
+        @nb.njit(_CastNB2SinglePrecision(_strdec) if SINGLE_PRECISION else _strdec, parallel=True)
         def HadProd_OMG(SREF_iji0j0, SPixA_FIij, SPixA_CFIij, HpOMG):
             
             #assert SREF_iji0j0.dtype == np.int32 and SREF_iji0j0.shape == (FOMG, 2)
@@ -954,7 +998,7 @@ class SingleSFFTConfigure_Numpy:
 
         # ** Fill Linear-System [𝛀]
         _strdec = 'f8[:,:](i4[:,:], i4[:,:], f8[:,:,:], f8[:,:])'
-        @nb.njit(_strdec, parallel=True)
+        @nb.njit(_CastNB2SinglePrecision(_strdec) if SINGLE_PRECISION else _strdec, parallel=True)
         def FillLS_OMG(SREF_ijab, REF_ab, PreOMG, LHMAT):
             
             #assert SREF_ijab.dtype == np.int32 and SREF_ijab.shape == (Fijab, 2)
@@ -1022,7 +1066,7 @@ class SingleSFFTConfigure_Numpy:
 
         # ** Hadamard Product [𝜦]
         _strdec = 'c16[:,:,:](i4[:,:], c16[:,:,:], c16[:,:,:], c16[:,:,:])'
-        @nb.njit(_strdec, parallel=True)
+        @nb.njit(_CastNB2SinglePrecision(_strdec) if SINGLE_PRECISION else _strdec, parallel=True)
         def HadProd_GAM(SREF_ijpq, SPixA_FIij, SPixA_CFTpq, HpGAM):
             
             #assert SREF_ijpq.dtype == np.int32 and SREF_ijpq.shape == (FGAM, 2)
@@ -1038,7 +1082,7 @@ class SingleSFFTConfigure_Numpy:
 
         # ** Fill Linear-System [𝜦]
         _strdec = 'f8[:,:](i4[:,:], i4[:,:], f8[:,:,:], f8[:,:])'
-        @nb.njit(_strdec, parallel=True)
+        @nb.njit(_CastNB2SinglePrecision(_strdec) if SINGLE_PRECISION else _strdec, parallel=True)
         def FillLS_GAM(SREF_ijab, REF_ab, PreGAM, LHMAT):
             
             #assert SREF_ijab.dtype == np.int32 and SREF_ijab.shape == (Fijab, 2)
@@ -1081,7 +1125,7 @@ class SingleSFFTConfigure_Numpy:
 
         # ** Hadamard Product [𝜳]
         _strdec = 'c16[:,:,:](i4[:,:], c16[:,:,:], c16[:,:,:], c16[:,:,:])'
-        @nb.njit(_strdec, parallel=True)
+        @nb.njit(_CastNB2SinglePrecision(_strdec) if SINGLE_PRECISION else _strdec, parallel=True)
         def HadProd_PSI(SREF_pqij, SPixA_CFIij, SPixA_FTpq, HpPSI):
             
             #assert SREF_pqij.dtype == np.int32 and SREF_pqij.shape == (FPSI, 2)
@@ -1097,7 +1141,7 @@ class SingleSFFTConfigure_Numpy:
 
         # ** Fill Linear-System [𝜳]
         _strdec = 'f8[:,:](i4[:,:], i4[:,:], f8[:,:,:], f8[:,:])'
-        @nb.njit(_strdec, parallel=True)
+        @nb.njit(_CastNB2SinglePrecision(_strdec) if SINGLE_PRECISION else _strdec, parallel=True)
         def FillLS_PSI(SREF_ijab, REF_ab, PrePSI, LHMAT):
             
             #assert SREF_ijab.dtype == np.int32 and SREF_ijab.shape == (Fijab, 2)
@@ -1140,7 +1184,7 @@ class SingleSFFTConfigure_Numpy:
 
         # ** Hadamard Product [𝚽]
         _strdec = 'c16[:,:,:](i4[:,:], c16[:,:,:], c16[:,:,:], c16[:,:,:])'
-        @nb.njit(_strdec, parallel=True)
+        @nb.njit(_CastNB2SinglePrecision(_strdec) if SINGLE_PRECISION else _strdec, parallel=True)
         def HadProd_PHI(SREF_pqp0q0, SPixA_FTpq, SPixA_CFTpq, HpPHI):
             
             #assert SREF_pqp0q0.dtype == np.int32 and SREF_pqp0q0.shape == (FPHI, 2)
@@ -1156,7 +1200,7 @@ class SingleSFFTConfigure_Numpy:
 
         # ** Fill Linear-System [𝚽]
         _strdec = 'f8[:,:](f8[:,:,:], f8[:,:])'
-        @nb.njit(_strdec, parallel=True)
+        @nb.njit(_CastNB2SinglePrecision(_strdec) if SINGLE_PRECISION else _strdec, parallel=True)
         def FillLS_PHI(PrePHI, LHMAT):
             
             #assert PrePHI.dtype == np.float64 and PrePHI.shape == (FPHI, N0, N1)
@@ -1184,7 +1228,7 @@ class SingleSFFTConfigure_Numpy:
 
         # ** Hadamard Product [𝚯]
         _strdec = 'c16[:,:,:](c16[:,:,:], c16[:,:], c16[:,:,:])'
-        @nb.njit(_strdec, parallel=True)
+        @nb.njit(_CastNB2SinglePrecision(_strdec) if SINGLE_PRECISION else _strdec, parallel=True)
         def HadProd_THE(SPixA_FIij, PixA_CFJ, HpTHE):
             
             #assert SPixA_FIij.dtype == np.complex128 and SPixA_FIij.shape == (Fij, N0, N1)
@@ -1198,7 +1242,7 @@ class SingleSFFTConfigure_Numpy:
 
         # ** Fill Linear-System [𝚯]
         _strdec = 'f8[:](i4[:,:], i4[:,:], f8[:,:,:], f8[:])'
-        @nb.njit(_strdec, parallel=True)
+        @nb.njit(_CastNB2SinglePrecision(_strdec) if SINGLE_PRECISION else _strdec, parallel=True)
         def FillLS_THE(SREF_ijab, REF_ab, PreTHE, RHb):
             
             #assert SREF_ijab.dtype == np.int32 and SREF_ijab.shape == (Fijab, 2)
@@ -1238,7 +1282,7 @@ class SingleSFFTConfigure_Numpy:
 
         # ** Hadamard Product [𝚫]
         _strdec = 'c16[:,:,:](c16[:,:,:], c16[:,:], c16[:,:,:])'
-        @nb.njit(_strdec, parallel=True)
+        @nb.njit(_CastNB2SinglePrecision(_strdec) if SINGLE_PRECISION else _strdec, parallel=True)
         def HadProd_DEL(SPixA_FTpq, PixA_CFJ, HpDEL):
             
             #assert SPixA_FTpq.dtype == np.complex128 and SPixA_FTpq.shape == (Fpq, N0, N1)
@@ -1252,7 +1296,7 @@ class SingleSFFTConfigure_Numpy:
 
         # ** Fill Linear-System [𝚫]
         _strdec = 'f8[:](f8[:,:,:], f8[:])'
-        @nb.njit(_strdec, parallel=True)
+        @nb.njit(_CastNB2SinglePrecision(_strdec) if SINGLE_PRECISION else _strdec, parallel=True)
         def FillLS_DEL(PreDEL, RHb):
             
             #assert PreDEL.dtype == np.float64 and PreDEL.shape == (FDEL, N0, N1)
@@ -1276,7 +1320,7 @@ class SingleSFFTConfigure_Numpy:
 
         # ** Remove Forbidden Stripes in Linear-System
         _strdec = 'f8[:,:](f8[:,:], i4[:], f8[:,:])'
-        @nb.njit(_strdec, parallel=True)
+        @nb.njit(_CastNB2SinglePrecision(_strdec) if SINGLE_PRECISION else _strdec, parallel=True)
         def Remove_LSFStripes(LHMAT, IDX_nFS, LHMAT_FSfree):
             
             #assert LHMAT.dtype == np.float64 and LHMAT.shape == (NEQ, NEQ)
@@ -1296,7 +1340,7 @@ class SingleSFFTConfigure_Numpy:
 
         # ** Extend Solution from Forbidden-Stripes-Free Linear-System
         _strdec = 'f8[:](f8[:], i4[:], f8[:])'
-        @nb.njit(_strdec, parallel=True)
+        @nb.njit(_CastNB2SinglePrecision(_strdec) if SINGLE_PRECISION else _strdec, parallel=True)
         def Extend_Solution(Solution_FSfree, IDX_nFS, Solution):
             
             #assert Solution_FSfree.dtype == np.float64 and Solution_FSfree.shape == (NEQ_FSfree, )
@@ -1313,7 +1357,7 @@ class SingleSFFTConfigure_Numpy:
         # ************************************ Construct_FDIFF.py ************************************ #
 
         _strdec = 'c16[:,:](i4[:,:], i4[:,:], c16[:], c16[:,:,:], c16[:,:,:], c16[:,:,:], c16[:], c16[:,:,:], c16[:,:], c16[:,:])'
-        @nb.njit(_strdec, parallel=True)
+        @nb.njit(_CastNB2SinglePrecision(_strdec) if SINGLE_PRECISION else _strdec, parallel=True)
         def Construct_FDIFF(SREF_ijab, REF_ab, a_ijab, SPixA_FIij, Kab_Wla, Kab_Wmb, b_pq, SPixA_FTpq, PixA_FJ, PixA_FDIFF):
             
             #assert SREF_ijab.dtype == np.int32 and SREF_ijab.shape == (Fijab, 2)
@@ -1368,7 +1412,7 @@ class SingleSFFTConfigure_Numpy:
 class SingleSFFTConfigure:
     @staticmethod
     def SSC(NX, NY, KerHW, KerPolyOrder=2, BGPolyOrder=2, ConstPhotRatio=True, \
-        BACKEND_4SUBTRACT='Cupy', NUM_CPU_THREADS_4SUBTRACT=8, VERBOSE_LEVEL=2):
+        BACKEND_4SUBTRACT='Cupy', NUM_CPU_THREADS_4SUBTRACT=8, SINGLE_PRECISION=False, VERBOSE_LEVEL=2):
 
         """
         # Arguments:
@@ -1385,11 +1429,12 @@ class SingleSFFTConfigure:
         if BACKEND_4SUBTRACT == 'Cupy':
             SFFTConfig = SingleSFFTConfigure_Cupy.SSCC(NX=NX, NY=NY, KerHW=KerHW, \
                 KerPolyOrder=KerPolyOrder, BGPolyOrder=BGPolyOrder, ConstPhotRatio=ConstPhotRatio, \
-                VERBOSE_LEVEL=VERBOSE_LEVEL)
-        
+                SINGLE_PRECISION=SINGLE_PRECISION, VERBOSE_LEVEL=VERBOSE_LEVEL)
+
         if BACKEND_4SUBTRACT == 'Numpy':
             SFFTConfig = SingleSFFTConfigure_Numpy.SSCN(NX=NX, NY=NY, KerHW=KerHW, \
                 KerPolyOrder=KerPolyOrder, BGPolyOrder=BGPolyOrder, ConstPhotRatio=ConstPhotRatio, \
-                NUM_CPU_THREADS_4SUBTRACT=NUM_CPU_THREADS_4SUBTRACT, VERBOSE_LEVEL=VERBOSE_LEVEL)
+                NUM_CPU_THREADS_4SUBTRACT=NUM_CPU_THREADS_4SUBTRACT, \
+                SINGLE_PRECISION=SINGLE_PRECISION, VERBOSE_LEVEL=VERBOSE_LEVEL)
         
         return SFFTConfig
