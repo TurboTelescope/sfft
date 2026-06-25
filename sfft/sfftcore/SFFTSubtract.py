@@ -10,16 +10,14 @@ class ElementalSFFTSubtract_Cupy:
     def ESSC(PixA_I, PixA_J, SFFTConfig, SFFTSolution=None, Subtract=False, VERBOSE_LEVEL=2):
         
         import cupy as cp
-        import cupyx.scipy.linalg as cpx_linalg
 
         def LSSolver(LHMAT_GPU, RHb_GPU):
-            """
-            # NOTE: cupy/numpy (moderately/extremely) slow version has been DEPRECATED!
-            Solution_GPU = cp.linalg.solve(LHMAT_GPU, RHb_GPU)
-            Solution_GPU = cp.array(np.linalg.solve(cp.asnumpy(LHMAT_GPU), cp.asnumpy(RHb_GPU)), dtype=REAL_DTYPE)
-            """
-            lu_piv_GPU = cpx_linalg.lu_factor(LHMAT_GPU, overwrite_a=False, check_finite=True)
-            Solution_GPU = cpx_linalg.lu_solve(lu_piv_GPU, RHb_GPU)
+            # CPU LAPACK solve: GPU cuSOLVER LU is less accurate on the
+            # ill-conditioned single-precision normal equations.
+            Solution_GPU = cp.array(
+                np.linalg.solve(cp.asnumpy(LHMAT_GPU), cp.asnumpy(RHb_GPU)),
+                dtype=REAL_DTYPE,
+            )
             return Solution_GPU
         
         ta = time.time()
