@@ -277,6 +277,39 @@ class Easy_SparsePacket:
 
         """
         
+        prep = Easy_SparsePacket.ESP_prep(FITS_REF, FITS_SCI, ForceConv=ForceConv, GKerHW=GKerHW, \
+            KerHWRatio=KerHWRatio, KerHWLimit=KerHWLimit, MaskSatContam=MaskSatContam, GAIN_KEY=GAIN_KEY, \
+            SATUR_KEY=SATUR_KEY, BACK_TYPE=BACK_TYPE, BACK_VALUE=BACK_VALUE, BACK_SIZE=BACK_SIZE, \
+            BACK_FILTERSIZE=BACK_FILTERSIZE, DETECT_THRESH=DETECT_THRESH, ANALYSIS_THRESH=ANALYSIS_THRESH, \
+            DETECT_MINAREA=DETECT_MINAREA, DETECT_MAXAREA=DETECT_MAXAREA, DEBLEND_MINCONT=DEBLEND_MINCONT, \
+            BACKPHOTO_TYPE=BACKPHOTO_TYPE, ONLY_FLAGS=ONLY_FLAGS, BoundarySIZE=BoundarySIZE, \
+            XY_PriorSelect=XY_PriorSelect, Hough_MINFR=Hough_MINFR, Hough_PeakClip=Hough_PeakClip, \
+            BeltHW=BeltHW, PointSource_MINELLIP=PointSource_MINELLIP, MatchTol=MatchTol, \
+            MatchTolFactor=MatchTolFactor, COARSE_VAR_REJECTION=COARSE_VAR_REJECTION, \
+            CVREJ_MAGD_THRESH=CVREJ_MAGD_THRESH, ELABO_VAR_REJECTION=ELABO_VAR_REJECTION, \
+            EVREJ_RATIO_THREH=EVREJ_RATIO_THREH, EVREJ_SAFE_MAGDEV=EVREJ_SAFE_MAGDEV, \
+            StarExt_iter=StarExt_iter, XY_PriorBan=XY_PriorBan, VERBOSE_LEVEL=VERBOSE_LEVEL)
+
+        return Easy_SparsePacket.ESP_solve(prep, FITS_REF, FITS_SCI, FITS_DIFF=FITS_DIFF, \
+            FITS_Solution=FITS_Solution, KerPolyOrder=KerPolyOrder, BGPolyOrder=BGPolyOrder, \
+            ConstPhotRatio=ConstPhotRatio, GAIN_KEY=GAIN_KEY, SATUR_KEY=SATUR_KEY, \
+            MaskSatContam=MaskSatContam, PostAnomalyCheck=PostAnomalyCheck, PAC_RATIO_THRESH=PAC_RATIO_THRESH, \
+            BACKEND_4SUBTRACT=BACKEND_4SUBTRACT, CUDA_DEVICE_4SUBTRACT=CUDA_DEVICE_4SUBTRACT, \
+            NUM_CPU_THREADS_4SUBTRACT=NUM_CPU_THREADS_4SUBTRACT, SINGLE_PRECISION=SINGLE_PRECISION, \
+            VERBOSE_LEVEL=VERBOSE_LEVEL)
+
+    @staticmethod
+    def ESP_prep(FITS_REF, FITS_SCI, ForceConv='AUTO', GKerHW=None, KerHWRatio=2.0, KerHWLimit=(2, 20), \
+        MaskSatContam=False, GAIN_KEY='GAIN', SATUR_KEY='ESATUR', BACK_TYPE='MANUAL', BACK_VALUE=0.0, \
+        BACK_SIZE=64, BACK_FILTERSIZE=3, DETECT_THRESH=2.0, ANALYSIS_THRESH=2.0, DETECT_MINAREA=5, \
+        DETECT_MAXAREA=0, DEBLEND_MINCONT=0.005, BACKPHOTO_TYPE='LOCAL', ONLY_FLAGS=[0], BoundarySIZE=30, \
+        XY_PriorSelect=None, Hough_MINFR=0.1, Hough_PeakClip=0.7, BeltHW=0.2, PointSource_MINELLIP=0.3, \
+        MatchTol=None, MatchTolFactor=3.0, COARSE_VAR_REJECTION=True, CVREJ_MAGD_THRESH=0.12, \
+        ELABO_VAR_REJECTION=True, EVREJ_RATIO_THREH=5.0, EVREJ_SAFE_MAGDEV=0.04, StarExt_iter=4, \
+        XY_PriorBan=None, VERBOSE_LEVEL=1):
+
+        """CPU prep for Sparse-Flavor SFFT: source selection, ConvdSide/KerHW, masked image pairs."""
+
         # * Perform Auto Sparse-Prep
         if VERBOSE_LEVEL in [2]:
             warnings.warn('\nMeLOn REMINDER: Input images for sparse-flavor sfft should be SKY-SUBTRACTED!')
@@ -320,6 +353,66 @@ class Easy_SparsePacket:
             KerHW = int(np.clip(KerHWRatio * FWHM_La, KerHWLimit[0], KerHWLimit[1]))
         else: KerHW = GKerHW
 
+        # * Build masked image pairs for SFFT-SUBTRACTION
+        PixA_REF = SFFTPrepDict['PixA_REF']
+        PixA_SCI = SFFTPrepDict['PixA_SCI']
+        SatMask_REF = SFFTPrepDict['REF-SAT-Mask']
+        SatMask_SCI = SFFTPrepDict['SCI-SAT-Mask']
+        NaNmask_U = SFFTPrepDict['Union-NaN-Mask']
+        PixA_mREF = SFFTPrepDict['PixA_mREF']
+        PixA_mSCI = SFFTPrepDict['PixA_mSCI']
+
+        if ConvdSide == 'REF':
+            PixA_mI, PixA_mJ = PixA_mREF, PixA_mSCI
+            if NaNmask_U is not None:
+                PixA_I, PixA_J = PixA_REF.copy(), PixA_SCI.copy()
+                PixA_I[NaNmask_U] = PixA_mI[NaNmask_U]
+                PixA_J[NaNmask_U] = PixA_mJ[NaNmask_U]
+            else: PixA_I, PixA_J = PixA_REF, PixA_SCI
+            if MaskSatContam: 
+                ContamMask_I = SatMask_REF
+                ContamMask_J = SatMask_SCI
+            else: ContamMask_I, ContamMask_J = None, None
+
+        if ConvdSide == 'SCI':
+            PixA_mI, PixA_mJ = PixA_mSCI, PixA_mREF
+            if NaNmask_U is not None:
+                PixA_I, PixA_J = PixA_SCI.copy(), PixA_REF.copy()
+                PixA_I[NaNmask_U] = PixA_mI[NaNmask_U]
+                PixA_J[NaNmask_U] = PixA_mJ[NaNmask_U]
+            else: PixA_I, PixA_J = PixA_SCI, PixA_REF
+            if MaskSatContam: 
+                ContamMask_I = SatMask_SCI
+                ContamMask_J = SatMask_REF
+            else: ContamMask_I, ContamMask_J = None, None
+
+        prep = {'SFFTPrepDict': SFFTPrepDict, 'PixA_I': PixA_I, 'PixA_J': PixA_J, \
+            'PixA_mI': PixA_mI, 'PixA_mJ': PixA_mJ, 'ContamMask_I': ContamMask_I, \
+            'ContamMask_J': ContamMask_J, 'KerHW': KerHW, 'ConvdSide': ConvdSide, \
+            'FWHM_REF': FWHM_REF, 'FWHM_SCI': FWHM_SCI, 'NaNmask_U': NaNmask_U}
+        return prep
+
+    @staticmethod
+    def ESP_solve(prep, FITS_REF, FITS_SCI, FITS_DIFF=None, FITS_Solution=None, KerPolyOrder=2, \
+        BGPolyOrder=0, ConstPhotRatio=True, GAIN_KEY='GAIN', SATUR_KEY='SATURATE', MaskSatContam=False, \
+        PostAnomalyCheck=False, PAC_RATIO_THRESH=5.0, BACKEND_4SUBTRACT='Cupy', CUDA_DEVICE_4SUBTRACT='0', \
+        NUM_CPU_THREADS_4SUBTRACT=8, SINGLE_PRECISION=False, VERBOSE_LEVEL=1):
+
+        """GPU solve for Sparse-Flavor SFFT: SSC config, subtraction, flux scaling, PAC, and save."""
+
+        SFFTPrepDict = prep['SFFTPrepDict']
+        PixA_I = prep['PixA_I']
+        PixA_J = prep['PixA_J']
+        PixA_mI = prep['PixA_mI']
+        PixA_mJ = prep['PixA_mJ']
+        ContamMask_I = prep['ContamMask_I']
+        ContamMask_J = prep['ContamMask_J']
+        KerHW = prep['KerHW']
+        ConvdSide = prep['ConvdSide']
+        FWHM_REF = prep['FWHM_REF']
+        FWHM_SCI = prep['FWHM_SCI']
+        NaNmask_U = prep['NaNmask_U']
+
         # * Choose GPU device for Cupy backend
         if BACKEND_4SUBTRACT == 'Cupy':
             import cupy as cp
@@ -344,37 +437,6 @@ class Easy_SparsePacket:
             _message += 'TAKES [%.3f s]!' %(time.time() - Tcomp_start)
             print('\nMeLOn Report: %s' %_message)
         
-        # * Perform SFFT Subtraction
-        SatMask_REF = SFFTPrepDict['REF-SAT-Mask']
-        SatMask_SCI = SFFTPrepDict['SCI-SAT-Mask']
-        NaNmask_U = SFFTPrepDict['Union-NaN-Mask']
-        PixA_mREF = SFFTPrepDict['PixA_mREF']
-        PixA_mSCI = SFFTPrepDict['PixA_mSCI']
-
-        if ConvdSide == 'REF':
-            PixA_mI, PixA_mJ = PixA_mREF, PixA_mSCI
-            if NaNmask_U is not None:
-                PixA_I, PixA_J = PixA_REF.copy(), PixA_SCI.copy()
-                PixA_I[NaNmask_U] = PixA_mI[NaNmask_U]
-                PixA_J[NaNmask_U] = PixA_mJ[NaNmask_U]
-            else: PixA_I, PixA_J = PixA_REF, PixA_SCI
-            if MaskSatContam: 
-                ContamMask_I = SatMask_REF
-                ContamMask_J = SatMask_SCI
-            else: ContamMask_I = None
-
-        if ConvdSide == 'SCI':
-            PixA_mI, PixA_mJ = PixA_mSCI, PixA_mREF
-            if NaNmask_U is not None:
-                PixA_I, PixA_J = PixA_SCI.copy(), PixA_REF.copy()
-                PixA_I[NaNmask_U] = PixA_mI[NaNmask_U]
-                PixA_J[NaNmask_U] = PixA_mJ[NaNmask_U]
-            else: PixA_I, PixA_J = PixA_SCI, PixA_REF
-            if MaskSatContam: 
-                ContamMask_I = SatMask_SCI
-                ContamMask_J = SatMask_REF
-            else: ContamMask_I = None
-
         if VERBOSE_LEVEL in [0, 1, 2]:
             print('MeLOn CheckPoint: TRIGGER SFFT-SUBTRACTION!')
 
