@@ -12,12 +12,10 @@ class ElementalSFFTSubtract_Cupy:
         import cupy as cp
 
         def LSSolver(LHMAT_GPU, RHb_GPU):
-            # CPU LAPACK solve: GPU cuSOLVER LU is less accurate on the
-            # ill-conditioned single-precision normal equations.
-            Solution_GPU = cp.array(
-                np.linalg.solve(cp.asnumpy(LHMAT_GPU), cp.asnumpy(RHb_GPU)),
-                dtype=REAL_DTYPE,
-            )
+            # f64 GPU solve: parity with CPU LAPACK, avoids the f32 cuSOLVER regression
+            Solution_GPU = cp.linalg.solve(
+                LHMAT_GPU.astype(cp.float64), RHb_GPU.astype(cp.float64)
+            ).astype(REAL_DTYPE)
             return Solution_GPU
         
         ta = time.time()
