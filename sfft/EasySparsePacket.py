@@ -306,9 +306,14 @@ class Easy_SparsePacket:
         XY_PriorSelect=None, Hough_MINFR=0.1, Hough_PeakClip=0.7, BeltHW=0.2, PointSource_MINELLIP=0.3, \
         MatchTol=None, MatchTolFactor=3.0, COARSE_VAR_REJECTION=True, CVREJ_MAGD_THRESH=0.12, \
         ELABO_VAR_REJECTION=True, EVREJ_RATIO_THREH=5.0, EVREJ_SAFE_MAGDEV=0.04, StarExt_iter=4, \
-        XY_PriorBan=None, VERBOSE_LEVEL=1):
+        XY_PriorBan=None, PreparedDetections=None, VERBOSE_LEVEL=1):
 
-        """CPU prep for Sparse-Flavor SFFT: source selection, ConvdSide/KerHW, masked image pairs."""
+        """CPU prep for Sparse-Flavor SFFT: source selection, ConvdSide/KerHW, masked image pairs.
+
+        PreparedDetections (dict) bypasses the internal SExtractor/Hough detection: supply
+        pre-computed per-side GoodSource catalogs + segmentation maps + FWHM
+        (keys AstSEx_GSr, FWHM_REF, PixA_SEGr, AstSEx_GSs, FWHM_SCI, PixA_SEGs) and the
+        tested cross-match / variable-rejection / masking path runs on them directly."""
 
         # * Perform Auto Sparse-Prep
         if VERBOSE_LEVEL in [2]:
@@ -320,7 +325,18 @@ class Easy_SparsePacket:
             DETECT_MAXAREA=DETECT_MAXAREA, DEBLEND_MINCONT=DEBLEND_MINCONT, BACKPHOTO_TYPE=BACKPHOTO_TYPE, \
             ONLY_FLAGS=ONLY_FLAGS, BoundarySIZE=BoundarySIZE, VERBOSE_LEVEL=VERBOSE_LEVEL)
 
-        if XY_PriorSelect is None:
+        if PreparedDetections is not None:
+            if VERBOSE_LEVEL in [0, 1, 2]:
+                print('MeLOn CheckPoint: TRIGGER Sparse-Flavor Preprocessing [PREPARED] MODE!')
+
+            SFFTPrepDict = _ASP.match_and_mask(AstSEx_GSr=PreparedDetections['AstSEx_GSr'], \
+                FWHM_REF=PreparedDetections['FWHM_REF'], PixA_SEGr=PreparedDetections['PixA_SEGr'], \
+                AstSEx_GSs=PreparedDetections['AstSEx_GSs'], FWHM_SCI=PreparedDetections['FWHM_SCI'], \
+                PixA_SEGs=PreparedDetections['PixA_SEGs'], MatchTol=MatchTol, MatchTolFactor=MatchTolFactor, \
+                COARSE_VAR_REJECTION=COARSE_VAR_REJECTION, CVREJ_MAGD_THRESH=CVREJ_MAGD_THRESH, \
+                ELABO_VAR_REJECTION=ELABO_VAR_REJECTION, EVREJ_RATIO_THREH=EVREJ_RATIO_THREH, \
+                EVREJ_SAFE_MAGDEV=EVREJ_SAFE_MAGDEV, StarExt_iter=StarExt_iter, XY_PriorBan=XY_PriorBan)
+        elif XY_PriorSelect is None:
             IMAGE_MASK_METHOD = 'HOUGH-AUTO'
             if VERBOSE_LEVEL in [0, 1, 2]:
                 print('MeLOn CheckPoint: TRIGGER Sparse-Flavor Auto Preprocessing [%s] MODE!' %IMAGE_MASK_METHOD)

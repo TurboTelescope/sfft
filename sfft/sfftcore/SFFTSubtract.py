@@ -12,11 +12,41 @@ class ElementalSFFTSubtract_Cupy:
         import cupy as cp
 
         def LSSolver(LHMAT_GPU, RHb_GPU):
-            # f64 GPU solve: parity with CPU LAPACK, avoids the f32 cuSOLVER regression
-            Solution_GPU = cp.linalg.solve(
-                LHMAT_GPU.astype(cp.float64), RHb_GPU.astype(cp.float64)
-            ).astype(REAL_DTYPE)
-            return Solution_GPU
+            # f64 GPU solve: parity with CPU LAPACK, avoids the f32 cuSOLVER regression.
+            L = LHMAT_GPU.astype(cp.float64)
+            b = RHb_GPU.astype(cp.float64)
+
+            def _bad(sol):
+                return sol is None or not bool(cp.isfinite(sol).all()) \
+                    or float(cp.abs(sol).max()) > 1e6
+
+            try:
+                Solution_GPU = cp.linalg.solve(L, b)
+            except cp.linalg.LinAlgError:
+                Solution_GPU = None
+
+            # Guardrail for near-singular tiles (e.g. a severely defocused PSF with
+            # too few independent kernel constraints): a plain solve returns a
+            # finite-but-diverged (~1e9) solution, not an exception, so gate on the
+            # solution magnitude. Only then fall back to an escalating per-coordinate
+            # (Marquardt) ridge on the f64 normal matrix, applied in place to avoid a
+            # second multi-GB allocation. Well-conditioned tiles skip this entirely,
+            # so their result is bit-identical to the un-ridged solve.
+            if _bad(Solution_GPU):
+                N = L.shape[0]
+                di = cp.arange(N)
+                d0 = cp.diagonal(L).copy()
+                dabs = cp.abs(d0)
+                for _eps in (1e-6, 1e-4, 1e-2, 1e-1, 1.0):
+                    L[di, di] = d0 + _eps * dabs
+                    try:
+                        Solution_GPU = cp.linalg.solve(L, b)
+                    except cp.linalg.LinAlgError:
+                        continue
+                    if not _bad(Solution_GPU):
+                        break
+
+            return Solution_GPU.astype(REAL_DTYPE)
         
         ta = time.time()
         # * Read SFFT parameters

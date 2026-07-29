@@ -181,6 +181,23 @@ class Auto_SparsePrep:
         AstSEx_GSr, FWHM_REF, PixA_SEGr = main_hough(self.FITS_REF)
         AstSEx_GSs, FWHM_SCI, PixA_SEGs = main_hough(self.FITS_SCI)
 
+        return self.match_and_mask(AstSEx_GSr=AstSEx_GSr, FWHM_REF=FWHM_REF, PixA_SEGr=PixA_SEGr, \
+            AstSEx_GSs=AstSEx_GSs, FWHM_SCI=FWHM_SCI, PixA_SEGs=PixA_SEGs, MatchTol=MatchTol, \
+            MatchTolFactor=MatchTolFactor, COARSE_VAR_REJECTION=COARSE_VAR_REJECTION, \
+            CVREJ_MAGD_THRESH=CVREJ_MAGD_THRESH, ELABO_VAR_REJECTION=ELABO_VAR_REJECTION, \
+            EVREJ_RATIO_THREH=EVREJ_RATIO_THREH, EVREJ_SAFE_MAGDEV=EVREJ_SAFE_MAGDEV, \
+            StarExt_iter=StarExt_iter, XY_PriorBan=XY_PriorBan)
+
+    def match_and_mask(self, AstSEx_GSr, FWHM_REF, PixA_SEGr, AstSEx_GSs, FWHM_SCI, PixA_SEGs, \
+        MatchTol=None, MatchTolFactor=3.0, COARSE_VAR_REJECTION=True, CVREJ_MAGD_THRESH=0.12, \
+        ELABO_VAR_REJECTION=False, EVREJ_RATIO_THREH=5.0, EVREJ_SAFE_MAGDEV=0.04, \
+        StarExt_iter=4, XY_PriorBan=None):
+        # Reusable core shared by HoughAutoMask (internal SExtractor+Hough detection) and
+        # externally-injected detections (turbo SubtractionPrep): cross-match per-side
+        # GoodSources, reject variables, build the SFFT masks. Each AstSEx_GS must carry
+        # SEGLABEL/X_IMAGE/Y_IMAGE/MAG_AUTO/FLUX_AUTO/FLUXERR_AUTO; PixA_SEG is its raw
+        # integer segmentation map.
+
         if self.VERBOSE_LEVEL in [1, 2]:
             _message = 'Estimated [FWHM_REF = %.3f pix] & [FWHM_SCI = %.3f pix]!' %(FWHM_REF, FWHM_SCI)
             print('\nMeLOn CheckPoint: %s' %_message)
