@@ -150,8 +150,8 @@ class Auto_SparsePrep:
 
     def HoughAutoMask(self, Hough_MINFR=0.1, Hough_PeakClip=0.7, BeltHW=0.2, PointSource_MINELLIP=0.3, \
         MatchTol=None, MatchTolFactor=3.0, COARSE_VAR_REJECTION=True, CVREJ_MAGD_THRESH=0.12, \
-        ELABO_VAR_REJECTION=False, EVREJ_RATIO_THREH=5.0, EVREJ_SAFE_MAGDEV=0.04, \
-        StarExt_iter=4, XY_PriorBan=None):
+        CVREJ_NSIGMA=None, MIN_SUBSOURCE=None, ELABO_VAR_REJECTION=False, EVREJ_RATIO_THREH=5.0, \
+        EVREJ_SAFE_MAGDEV=0.04, StarExt_iter=4, XY_PriorBan=None):
 
         # - Hough Transform is used to determine subtraction-sources
         # TODO: change parameter names
@@ -184,14 +184,15 @@ class Auto_SparsePrep:
         return self.match_and_mask(AstSEx_GSr=AstSEx_GSr, FWHM_REF=FWHM_REF, PixA_SEGr=PixA_SEGr, \
             AstSEx_GSs=AstSEx_GSs, FWHM_SCI=FWHM_SCI, PixA_SEGs=PixA_SEGs, MatchTol=MatchTol, \
             MatchTolFactor=MatchTolFactor, COARSE_VAR_REJECTION=COARSE_VAR_REJECTION, \
-            CVREJ_MAGD_THRESH=CVREJ_MAGD_THRESH, ELABO_VAR_REJECTION=ELABO_VAR_REJECTION, \
+            CVREJ_MAGD_THRESH=CVREJ_MAGD_THRESH, CVREJ_NSIGMA=CVREJ_NSIGMA, MIN_SUBSOURCE=MIN_SUBSOURCE, \
+            ELABO_VAR_REJECTION=ELABO_VAR_REJECTION, \
             EVREJ_RATIO_THREH=EVREJ_RATIO_THREH, EVREJ_SAFE_MAGDEV=EVREJ_SAFE_MAGDEV, \
             StarExt_iter=StarExt_iter, XY_PriorBan=XY_PriorBan)
 
     def match_and_mask(self, AstSEx_GSr, FWHM_REF, PixA_SEGr, AstSEx_GSs, FWHM_SCI, PixA_SEGs, \
         MatchTol=None, MatchTolFactor=3.0, COARSE_VAR_REJECTION=True, CVREJ_MAGD_THRESH=0.12, \
-        ELABO_VAR_REJECTION=False, EVREJ_RATIO_THREH=5.0, EVREJ_SAFE_MAGDEV=0.04, \
-        StarExt_iter=4, XY_PriorBan=None):
+        CVREJ_NSIGMA=None, MIN_SUBSOURCE=None, ELABO_VAR_REJECTION=False, EVREJ_RATIO_THREH=5.0, \
+        EVREJ_SAFE_MAGDEV=0.04, StarExt_iter=4, XY_PriorBan=None):
         # Reusable core shared by HoughAutoMask (internal SExtractor+Hough detection) and
         # externally-injected detections (turbo SubtractionPrep): cross-match per-side
         # GoodSources, reject variables, build the SFFT masks. Each AstSEx_GS must carry
@@ -249,22 +250,33 @@ class Auto_SparsePrep:
             _message += '[median: %.3f mag] >>> [weighted-median: %.3f mag]!' %(MAG_OFFSET0, MAG_OFFSET)
             print('\nMeLOn CheckPoint: %s' %_message)
 
+        _dev_MGS = MAGD_MGS - MAG_OFFSET
+
         # * Apply a coarse variable rejection (abbr. CVREJ)
         if COARSE_VAR_REJECTION:
-            CVREJ_MASK = np.abs(MAGD_MGS - MAG_OFFSET) > CVREJ_MAGD_THRESH
-            AstSEx_iSSr = AstSEx_MGSr[~CVREJ_MASK]
-            AstSEx_iSSs = AstSEx_MGSs[~CVREJ_MASK]
-            
+            if CVREJ_NSIGMA is not None:
+                _sig = 1.4826 * np.median(np.abs(_dev_MGS - np.median(_dev_MGS)))
+                CVREJ_THRESH = CVREJ_NSIGMA * _sig if _sig > 0 else CVREJ_MAGD_THRESH
+            else:
+                CVREJ_THRESH = CVREJ_MAGD_THRESH
+            CVREJ_MASK = np.abs(_dev_MGS) > CVREJ_THRESH
+
             if self.VERBOSE_LEVEL in [1, 2]:
-                _message = 'Coarse Variable Rejection [magnitude deviation > %.3f mag] ' %CVREJ_MAGD_THRESH
+                if CVREJ_NSIGMA is not None:
+                    _message = 'Coarse Variable Rejection [%.2f sigma = %.3f mag] ' %(CVREJ_NSIGMA, CVREJ_THRESH)
+                else:
+                    _message = 'Coarse Variable Rejection [magnitude deviation > %.3f mag] ' %CVREJ_THRESH
                 _message += 'on Matched-GoodSources [%d / %d]!' %(np.sum(CVREJ_MASK), NUM_MGS)
                 print('\nMeLOn CheckPoint: %s' %_message)
         else:
-            AstSEx_iSSr = AstSEx_MGSr
-            AstSEx_iSSs = AstSEx_MGSs
-
+            CVREJ_MASK = np.zeros(NUM_MGS, dtype=bool)
             if self.VERBOSE_LEVEL in [1, 2]:
                 print('\nMeLOn CheckPoint: SKIP Coarse Variable Rejection!')
+
+        AstSEx_iSSr = AstSEx_MGSr[~CVREJ_MASK]
+        AstSEx_iSSs = AstSEx_MGSs[~CVREJ_MASK]
+        _cvrej_keep_idx = np.where(~CVREJ_MASK)[0]
+        REJECT_MASK = CVREJ_MASK.copy()
 
         # * Apply a more elaborate variable rejection (abbr. EVREJ)
         if ELABO_VAR_REJECTION:
@@ -320,8 +332,7 @@ class Auto_SparsePrep:
             _SAFEMASK = np.abs(MAGD_iSS - MAG_OFFSET) <= EVREJ_SAFE_MAGDEV
             
             EVREJ_MASK = np.logical_and(_OUTMASK, ~_SAFEMASK)
-            AstSEx_SSr = AstSEx_iSSr[~EVREJ_MASK]
-            AstSEx_SSs = AstSEx_iSSs[~EVREJ_MASK]
+            REJECT_MASK[_cvrej_keep_idx[EVREJ_MASK]] = True
 
             EVREJ_PERC = np.sum(EVREJ_MASK) / NUM_MGS
 
@@ -337,11 +348,21 @@ class Auto_SparsePrep:
                     _warn_message = '[%s] Matched-GoodSources ARE REJECTED BY EVREJ!' %('{:.2%}'.format(EVREJ_PERC))
                     warnings.warn('\nMeLOn IMPORTANT WARNING: %s' %_warn_message)
         else:
-            AstSEx_SSr = AstSEx_iSSr
-            AstSEx_SSs = AstSEx_iSSs
-            
             if self.VERBOSE_LEVEL in [1, 2]:
                 print('\nMeLOn CheckPoint: SKIP Elaborate Variable Rejection!')
+
+        # * Conditioning guard: never starve the kernel solve below MIN_SUBSOURCE
+        _keep = ~REJECT_MASK
+        _floor = None if MIN_SUBSOURCE is None else min(MIN_SUBSOURCE, NUM_MGS)
+        if _floor is not None and 0 < int(_keep.sum()) < _floor:
+            _rej_idx = np.where(REJECT_MASK)[0]
+            _addback = _rej_idx[np.argsort(np.abs(_dev_MGS[_rej_idx]))[:_floor - int(_keep.sum())]]
+            _keep[_addback] = True
+            if self.VERBOSE_LEVEL in [1, 2]:
+                print('\nMeLOn CheckPoint: Conditioning-Guard re-instated [%d] least-deviant sources to floor [%d]!' %(len(_addback), _floor))
+
+        AstSEx_SSr = AstSEx_MGSr[_keep]
+        AstSEx_SSs = AstSEx_MGSs[_keep]
 
         # * Combine catalogs for survived MGS (i.e., SubSources)
         for coln in AstSEx_SSr.colnames:

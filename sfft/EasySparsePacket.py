@@ -305,7 +305,8 @@ class Easy_SparsePacket:
         DETECT_MAXAREA=0, DEBLEND_MINCONT=0.005, BACKPHOTO_TYPE='LOCAL', ONLY_FLAGS=[0], BoundarySIZE=30, \
         XY_PriorSelect=None, Hough_MINFR=0.1, Hough_PeakClip=0.7, BeltHW=0.2, PointSource_MINELLIP=0.3, \
         MatchTol=None, MatchTolFactor=3.0, COARSE_VAR_REJECTION=True, CVREJ_MAGD_THRESH=0.12, \
-        ELABO_VAR_REJECTION=True, EVREJ_RATIO_THREH=5.0, EVREJ_SAFE_MAGDEV=0.04, StarExt_iter=4, \
+        CVREJ_NSIGMA=None, MIN_SUBSOURCE=None, ELABO_VAR_REJECTION=True, EVREJ_RATIO_THREH=5.0, \
+        EVREJ_SAFE_MAGDEV=0.04, StarExt_iter=4, \
         XY_PriorBan=None, PreparedDetections=None, VERBOSE_LEVEL=1):
 
         """CPU prep for Sparse-Flavor SFFT: source selection, ConvdSide/KerHW, masked image pairs.
@@ -334,6 +335,7 @@ class Easy_SparsePacket:
                 AstSEx_GSs=PreparedDetections['AstSEx_GSs'], FWHM_SCI=PreparedDetections['FWHM_SCI'], \
                 PixA_SEGs=PreparedDetections['PixA_SEGs'], MatchTol=MatchTol, MatchTolFactor=MatchTolFactor, \
                 COARSE_VAR_REJECTION=COARSE_VAR_REJECTION, CVREJ_MAGD_THRESH=CVREJ_MAGD_THRESH, \
+                CVREJ_NSIGMA=CVREJ_NSIGMA, MIN_SUBSOURCE=MIN_SUBSOURCE, \
                 ELABO_VAR_REJECTION=ELABO_VAR_REJECTION, EVREJ_RATIO_THREH=EVREJ_RATIO_THREH, \
                 EVREJ_SAFE_MAGDEV=EVREJ_SAFE_MAGDEV, StarExt_iter=StarExt_iter, XY_PriorBan=XY_PriorBan)
         elif XY_PriorSelect is None:
@@ -344,6 +346,7 @@ class Easy_SparsePacket:
             SFFTPrepDict = _ASP.HoughAutoMask(Hough_MINFR=Hough_MINFR, Hough_PeakClip=Hough_PeakClip, \
                 BeltHW=BeltHW, PointSource_MINELLIP=PointSource_MINELLIP, MatchTol=MatchTol, MatchTolFactor=MatchTolFactor, \
                 COARSE_VAR_REJECTION=COARSE_VAR_REJECTION, CVREJ_MAGD_THRESH=CVREJ_MAGD_THRESH, \
+                CVREJ_NSIGMA=CVREJ_NSIGMA, MIN_SUBSOURCE=MIN_SUBSOURCE, \
                 ELABO_VAR_REJECTION=ELABO_VAR_REJECTION, EVREJ_RATIO_THREH=EVREJ_RATIO_THREH, \
                 EVREJ_SAFE_MAGDEV=EVREJ_SAFE_MAGDEV, StarExt_iter=StarExt_iter, XY_PriorBan=XY_PriorBan)
         else:
