@@ -12,19 +12,14 @@ class ElementalSFFTSubtract_Cupy:
         import cupy as cp
 
         def LSSolver(LHMAT_GPU, RHb_GPU):
-            # f64 GPU solve: parity with CPU LAPACK, avoids the f32 cuSOLVER regression.
-            L = LHMAT_GPU.astype(cp.float64)
-            b = RHb_GPU.astype(cp.float64)
-
-            # The SFFT free-form kernel makes the normal matrix intrinsically
-            # rank-deficient (cond ~1e16-1e19); the plain f64 LU lands a benign
-            # large-norm null-space member (~1e8) that matches CPU LAPACK. Do NOT
-            # gate/ridge on the solution magnitude: at KerPolyOrder=2 that fires on
-            # every tile and degrades the subtraction (a Marquardt ridge biases the
-            # kernel). f32 is not an option here - the conditioning is far past its
-            # range and it produces broad junk on dense fields.
-            Solution_GPU = cp.linalg.solve(L, b)
-            return Solution_GPU.astype(REAL_DTYPE)
+            # CPU LAPACK f64: the SFFT free-form normal matrix is intrinsically
+            # rank-deficient, and cuSOLVER's LU lands a bad null-space member on
+            # some frames (square residuals at every source); LAPACK's pivoted LU
+            # lands the benign one. BLAS threads are capped by the launcher's
+            # per-service OMP/MKL/OPENBLAS_NUM_THREADS.
+            L = cp.asnumpy(LHMAT_GPU).astype(np.float64)
+            b = cp.asnumpy(RHb_GPU).astype(np.float64)
+            return cp.asarray(np.linalg.solve(L, b).astype(REAL_DTYPE))
         
         ta = time.time()
         # * Read SFFT parameters
