@@ -16,36 +16,14 @@ class ElementalSFFTSubtract_Cupy:
             L = LHMAT_GPU.astype(cp.float64)
             b = RHb_GPU.astype(cp.float64)
 
-            def _bad(sol):
-                return sol is None or not bool(cp.isfinite(sol).all()) \
-                    or float(cp.abs(sol).max()) > 1e6
-
-            try:
-                Solution_GPU = cp.linalg.solve(L, b)
-            except cp.linalg.LinAlgError:
-                Solution_GPU = None
-
-            # Guardrail for near-singular tiles (e.g. a severely defocused PSF with
-            # too few independent kernel constraints): a plain solve returns a
-            # finite-but-diverged (~1e9) solution, not an exception, so gate on the
-            # solution magnitude. Only then fall back to an escalating per-coordinate
-            # (Marquardt) ridge on the f64 normal matrix, applied in place to avoid a
-            # second multi-GB allocation. Well-conditioned tiles skip this entirely,
-            # so their result is bit-identical to the un-ridged solve.
-            if _bad(Solution_GPU):
-                N = L.shape[0]
-                di = cp.arange(N)
-                d0 = cp.diagonal(L).copy()
-                dabs = cp.abs(d0)
-                for _eps in (1e-6, 1e-4, 1e-2, 1e-1, 1.0):
-                    L[di, di] = d0 + _eps * dabs
-                    try:
-                        Solution_GPU = cp.linalg.solve(L, b)
-                    except cp.linalg.LinAlgError:
-                        continue
-                    if not _bad(Solution_GPU):
-                        break
-
+            # The SFFT free-form kernel makes the normal matrix intrinsically
+            # rank-deficient (cond ~1e16-1e19); the plain f64 LU lands a benign
+            # large-norm null-space member (~1e8) that matches CPU LAPACK. Do NOT
+            # gate/ridge on the solution magnitude: at KerPolyOrder=2 that fires on
+            # every tile and degrades the subtraction (a Marquardt ridge biases the
+            # kernel). f32 is not an option here - the conditioning is far past its
+            # range and it produces broad junk on dense fields.
+            Solution_GPU = cp.linalg.solve(L, b)
             return Solution_GPU.astype(REAL_DTYPE)
         
         ta = time.time()
