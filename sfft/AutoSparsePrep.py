@@ -16,10 +16,16 @@ __version__ = "v1.4"
 class Auto_SparsePrep:
     def __init__(self, FITS_REF, FITS_SCI, GAIN_KEY='GAIN', SATUR_KEY='ESATUR', BACK_TYPE='MANUAL', \
         BACK_VALUE=0.0, BACK_SIZE=64, BACK_FILTERSIZE=3, DETECT_THRESH=2.0, ANALYSIS_THRESH=2.0, DETECT_MINAREA=5, \
-        DETECT_MAXAREA=0, DEBLEND_MINCONT=0.005, BACKPHOTO_TYPE='LOCAL', ONLY_FLAGS=[0], BoundarySIZE=30, VERBOSE_LEVEL=2):
+        DETECT_MAXAREA=0, DEBLEND_MINCONT=0.005, BACKPHOTO_TYPE='LOCAL', ONLY_FLAGS=[0], BoundarySIZE=30, \
+        PixA_REF_input=None, PixA_SCI_input=None, SATLEVEL_REF_input=None, SATLEVEL_SCI_input=None, VERBOSE_LEVEL=2):
 
         self.FITS_REF = FITS_REF
         self.FITS_SCI = FITS_SCI
+
+        self.PixA_REF_input = PixA_REF_input
+        self.PixA_SCI_input = PixA_SCI_input
+        self.SATLEVEL_REF_input = SATLEVEL_REF_input
+        self.SATLEVEL_SCI_input = SATLEVEL_SCI_input
 
         self.GAIN_KEY = GAIN_KEY
         self.SATUR_KEY = SATUR_KEY
@@ -42,18 +48,30 @@ class Auto_SparsePrep:
 
     def run_image_mask(self, AstSEx_SS, PixA_SEGr, PixA_SEGs, StarExt_iter, XY_PriorBan):
         
-        PixA_REF = fits.getdata(self.FITS_REF, ext=0).T
+        if self.PixA_REF_input is not None:
+            PixA_REF = self.PixA_REF_input.T
+        else:
+            PixA_REF = fits.getdata(self.FITS_REF, ext=0).T
         if np.issubdtype(PixA_REF.dtype, np.integer):
             PixA_REF = PixA_REF.astype(np.float64)
-        
-        PixA_SCI = fits.getdata(self.FITS_SCI, ext=0).T
+
+        if self.PixA_SCI_input is not None:
+            PixA_SCI = self.PixA_SCI_input.T
+        else:
+            PixA_SCI = fits.getdata(self.FITS_SCI, ext=0).T
         if np.issubdtype(PixA_SCI.dtype, np.integer):
             PixA_SCI = PixA_SCI.astype(np.float64)
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            SATLEVEL_REF = fits.getheader(self.FITS_REF, ext=0)[self.SATUR_KEY]
-            SATLEVEL_SCI = fits.getheader(self.FITS_SCI, ext=0)[self.SATUR_KEY]
+            if self.SATLEVEL_REF_input is not None:
+                SATLEVEL_REF = self.SATLEVEL_REF_input
+            else:
+                SATLEVEL_REF = fits.getheader(self.FITS_REF, ext=0)[self.SATUR_KEY]
+            if self.SATLEVEL_SCI_input is not None:
+                SATLEVEL_SCI = self.SATLEVEL_SCI_input
+            else:
+                SATLEVEL_SCI = fits.getheader(self.FITS_SCI, ext=0)[self.SATUR_KEY]
             SatMask_REF = PixA_REF >= SATLEVEL_REF
             SatMask_SCI = PixA_SCI >= SATLEVEL_SCI
 

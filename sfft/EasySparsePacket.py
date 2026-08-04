@@ -307,6 +307,7 @@ class Easy_SparsePacket:
         MatchTol=None, MatchTolFactor=3.0, COARSE_VAR_REJECTION=True, CVREJ_MAGD_THRESH=0.12, \
         CVREJ_NSIGMA=None, MIN_SUBSOURCE=None, ELABO_VAR_REJECTION=True, EVREJ_RATIO_THREH=5.0, \
         EVREJ_SAFE_MAGDEV=0.04, StarExt_iter=4, \
+        PixA_REF_input=None, PixA_SCI_input=None, SATLEVEL_REF_input=None, SATLEVEL_SCI_input=None, \
         XY_PriorBan=None, PreparedDetections=None, VERBOSE_LEVEL=1):
 
         """CPU prep for Sparse-Flavor SFFT: source selection, ConvdSide/KerHW, masked image pairs.
@@ -324,7 +325,9 @@ class Easy_SparsePacket:
             BACK_TYPE=BACK_TYPE, BACK_VALUE=BACK_VALUE, BACK_SIZE=BACK_SIZE, BACK_FILTERSIZE=BACK_FILTERSIZE, \
             DETECT_THRESH=DETECT_THRESH, ANALYSIS_THRESH=ANALYSIS_THRESH, DETECT_MINAREA=DETECT_MINAREA, \
             DETECT_MAXAREA=DETECT_MAXAREA, DEBLEND_MINCONT=DEBLEND_MINCONT, BACKPHOTO_TYPE=BACKPHOTO_TYPE, \
-            ONLY_FLAGS=ONLY_FLAGS, BoundarySIZE=BoundarySIZE, VERBOSE_LEVEL=VERBOSE_LEVEL)
+            ONLY_FLAGS=ONLY_FLAGS, BoundarySIZE=BoundarySIZE, PixA_REF_input=PixA_REF_input, \
+            PixA_SCI_input=PixA_SCI_input, SATLEVEL_REF_input=SATLEVEL_REF_input, \
+            SATLEVEL_SCI_input=SATLEVEL_SCI_input, VERBOSE_LEVEL=VERBOSE_LEVEL)
 
         if PreparedDetections is not None:
             if VERBOSE_LEVEL in [0, 1, 2]:
