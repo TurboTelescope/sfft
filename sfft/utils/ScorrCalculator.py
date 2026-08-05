@@ -64,6 +64,8 @@ class Scorr_Calculator:
     @staticmethod
     def compute_decorr(diff, K_sfft, fwhm_convd_side_px, PixA_SCI, PixA_REF,
                        conv_side, VERBOSE_LEVEL=2):
+        import logging as _lg
+        import time as _tm
         from sfft.utils.DeCorrelationCalculator import DeCorrelation_Calculator
 
         try:
@@ -73,13 +75,27 @@ class Scorr_Calculator:
             xp = np
             on_gpu = False
 
+        _p = {}
+        _prev = _tm.perf_counter()
+
+        def _lap(name, sync=False):
+            nonlocal _prev
+            if sync and on_gpu:
+                xp.cuda.Stream.null.synchronize()
+            now = _tm.perf_counter()
+            _p[name] = now - _prev
+            _prev = now
+
         nan_mask = ~np.isfinite(diff)
         diff_filled = np.where(nan_mask, 0.0, diff).astype(np.float32)
+        _lap("prep")
 
         skysig_sci = SkyLevel_Estimator.SLE(
             PixA_obj=np.nan_to_num(np.asarray(PixA_SCI[::3, ::3], dtype=np.float64)))[1]
+        _lap("sle_sci")
         skysig_ref = SkyLevel_Estimator.SLE(
             PixA_obj=np.nan_to_num(np.asarray(PixA_REF[::3, ::3], dtype=np.float64)))[1]
+        _lap("sle_ref")
         if conv_side == "REF":
             skysig_conv, skysig_unconv = skysig_ref, skysig_sci
         else:
@@ -89,20 +105,30 @@ class Scorr_Calculator:
             MK_JLst=[None], SkySig_JLst=[skysig_unconv],
             MK_ILst=[K_sfft], SkySig_ILst=[skysig_conv], MK_Fin=None,
             VERBOSE_LEVEL=VERBOSE_LEVEL)
+        _lap("dcc")
 
         P_D = Scorr_Calculator.build_diff_psf(K_sfft, fwhm_convd_side_px, diff.shape)
+        _lap("psf", sync=True)
 
         FKDECO = xp.fft.fft2(xp.asarray(_embed_centered_then_shift(KDeCo, diff.shape)))
         FPSF = xp.fft.fft2(xp.asarray(P_D)) * FKDECO
         FdDIFF = xp.fft.fft2(xp.asarray(diff_filled)) * FKDECO
         S = xp.fft.ifft2(FdDIFF * xp.conj(FPSF)).real
         S = xp.asnumpy(S) if on_gpu else S
+        _lap("fft_main", sync=True)
 
         skysig_S = SkyLevel_Estimator.SLE(PixA_obj=S[::3, ::3])[1]
+        _lap("sle_S")
         if skysig_S > 0:
             S = S / skysig_S
         if nan_mask.any():
             S = np.where(nan_mask, np.nan, S)
+        _lap("norm")
+        _p["total"] = sum(_p.values())
+        _lg.getLogger("turbo_pipeline.gpu_service.scorr").info(
+            "scorr_prof prep=%(prep).3f sle_sci=%(sle_sci).3f sle_ref=%(sle_ref).3f "
+            "dcc=%(dcc).3f psf=%(psf).3f fft_main=%(fft_main).3f sle_S=%(sle_S).3f "
+            "norm=%(norm).3f total=%(total).3f" % _p)
         return S, S
 
     @staticmethod
