@@ -21,7 +21,7 @@ def _gaussian_kernel_2d(fwhm_px, half_size):
 
 
 def _embed_centered_then_shift(small, target_shape):
-    big = np.zeros(target_shape, dtype=np.float64)
+    big = np.zeros(target_shape, dtype=np.float32)
     nh, nw = small.shape
     cy, cx = target_shape[0] // 2, target_shape[1] // 2
     sy, sx = cy - nh // 2, cx - nw // 2
@@ -87,7 +87,7 @@ class Scorr_Calculator:
             _prev = now
 
         nan_mask = ~np.isfinite(diff)
-        diff_filled = np.where(nan_mask, 0.0, diff).astype(np.float64)
+        diff_filled = np.where(nan_mask, 0.0, diff).astype(np.float32)
         _lap("prep")
 
         skysig_sci = SkyLevel_Estimator.SLE(
