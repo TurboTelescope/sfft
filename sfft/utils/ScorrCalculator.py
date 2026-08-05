@@ -21,7 +21,7 @@ def _gaussian_kernel_2d(fwhm_px, half_size):
 
 
 def _embed_centered_then_shift(small, target_shape):
-    big = np.zeros(target_shape, dtype=np.float32)
+    big = np.zeros(target_shape, dtype=np.float64)
     nh, nw = small.shape
     cy, cx = target_shape[0] // 2, target_shape[1] // 2
     sy, sx = cy - nh // 2, cx - nw // 2
@@ -87,14 +87,14 @@ class Scorr_Calculator:
             _prev = now
 
         nan_mask = ~np.isfinite(diff)
-        diff_filled = np.where(nan_mask, 0.0, diff).astype(np.float32)
+        diff_filled = np.where(nan_mask, 0.0, diff).astype(np.float64)
         _lap("prep")
 
         skysig_sci = SkyLevel_Estimator.SLE(
-            PixA_obj=np.nan_to_num(np.asarray(PixA_SCI[::3, ::3], dtype=np.float64)))[1]
+            PixA_obj=np.nan_to_num(np.asarray(PixA_SCI[::6, ::6], dtype=np.float64)))[1]
         _lap("sle_sci")
         skysig_ref = SkyLevel_Estimator.SLE(
-            PixA_obj=np.nan_to_num(np.asarray(PixA_REF[::3, ::3], dtype=np.float64)))[1]
+            PixA_obj=np.nan_to_num(np.asarray(PixA_REF[::6, ::6], dtype=np.float64)))[1]
         _lap("sle_ref")
         if conv_side == "REF":
             skysig_conv, skysig_unconv = skysig_ref, skysig_sci
@@ -117,7 +117,7 @@ class Scorr_Calculator:
         S = xp.asnumpy(S) if on_gpu else S
         _lap("fft_main", sync=True)
 
-        skysig_S = SkyLevel_Estimator.SLE(PixA_obj=S[::3, ::3])[1]
+        skysig_S = SkyLevel_Estimator.SLE(PixA_obj=S[::6, ::6])[1]
         _lap("sle_S")
         if skysig_S > 0:
             S = S / skysig_S
