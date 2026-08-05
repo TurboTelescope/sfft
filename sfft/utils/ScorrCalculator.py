@@ -91,10 +91,10 @@ class Scorr_Calculator:
         _lap("prep")
 
         skysig_sci = SkyLevel_Estimator.SLE(
-            PixA_obj=np.nan_to_num(np.asarray(PixA_SCI[::6, ::6], dtype=np.float64)))[1]
+            PixA_obj=np.nan_to_num(np.asarray(PixA_SCI[::7, ::7], dtype=np.float64)))[1]
         _lap("sle_sci")
         skysig_ref = SkyLevel_Estimator.SLE(
-            PixA_obj=np.nan_to_num(np.asarray(PixA_REF[::6, ::6], dtype=np.float64)))[1]
+            PixA_obj=np.nan_to_num(np.asarray(PixA_REF[::7, ::7], dtype=np.float64)))[1]
         _lap("sle_ref")
         if conv_side == "REF":
             skysig_conv, skysig_unconv = skysig_ref, skysig_sci
@@ -117,7 +117,7 @@ class Scorr_Calculator:
         S = xp.asnumpy(S) if on_gpu else S
         _lap("fft_main", sync=True)
 
-        skysig_S = SkyLevel_Estimator.SLE(PixA_obj=S[::6, ::6])[1]
+        skysig_S = SkyLevel_Estimator.SLE(PixA_obj=S[::7, ::7])[1]
         _lap("sle_S")
         if skysig_S > 0:
             S = S / skysig_S
