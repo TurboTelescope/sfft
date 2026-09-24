@@ -62,8 +62,13 @@ class Scorr_Calculator:
             return P_D
 
     @staticmethod
+    def sky_sigma(PixA):
+        return SkyLevel_Estimator.SLE(
+            PixA_obj=np.nan_to_num(np.asarray(PixA[::7, ::7], dtype=np.float64)))[1]
+
+    @staticmethod
     def compute_decorr(diff, K_sfft, fwhm_convd_side_px, PixA_SCI, PixA_REF,
-                       conv_side, VERBOSE_LEVEL=2):
+                       conv_side, VERBOSE_LEVEL=2, skysig_sci=None, skysig_ref=None):
         import logging as _lg
         import time as _tm
         from sfft.utils.DeCorrelationCalculator import DeCorrelation_Calculator
@@ -90,11 +95,11 @@ class Scorr_Calculator:
         diff_filled = np.where(nan_mask, 0.0, diff).astype(np.float32)
         _lap("prep")
 
-        skysig_sci = SkyLevel_Estimator.SLE(
-            PixA_obj=np.nan_to_num(np.asarray(PixA_SCI[::7, ::7], dtype=np.float64)))[1]
+        if skysig_sci is None:
+            skysig_sci = Scorr_Calculator.sky_sigma(PixA_SCI)
         _lap("sle_sci")
-        skysig_ref = SkyLevel_Estimator.SLE(
-            PixA_obj=np.nan_to_num(np.asarray(PixA_REF[::7, ::7], dtype=np.float64)))[1]
+        if skysig_ref is None:
+            skysig_ref = Scorr_Calculator.sky_sigma(PixA_REF)
         _lap("sle_ref")
         if conv_side == "REF":
             skysig_conv, skysig_unconv = skysig_ref, skysig_sci
