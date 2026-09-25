@@ -418,7 +418,7 @@ class Easy_SparsePacket:
     def ESP_solve(prep, FITS_REF, FITS_SCI, FITS_DIFF=None, FITS_Solution=None, KerPolyOrder=2, \
         BGPolyOrder=0, ConstPhotRatio=True, GAIN_KEY='GAIN', SATUR_KEY='SATURATE', MaskSatContam=False, \
         PostAnomalyCheck=False, PAC_RATIO_THRESH=5.0, BACKEND_4SUBTRACT='Cupy', CUDA_DEVICE_4SUBTRACT='0', \
-        NUM_CPU_THREADS_4SUBTRACT=8, SINGLE_PRECISION=False, VERBOSE_LEVEL=1):
+        NUM_CPU_THREADS_4SUBTRACT=8, SINGLE_PRECISION=False, VERBOSE_LEVEL=1, gpu_lock=None):
 
         """GPU solve for Sparse-Flavor SFFT: SSC config, subtraction, flux scaling, PAC, and save."""
 
@@ -465,7 +465,7 @@ class Easy_SparsePacket:
         Tsub_start = time.time()
         _tmp = GeneralSFFTSubtract.GSS(PixA_I=PixA_I, PixA_J=PixA_J, PixA_mI=PixA_mI, PixA_mJ=PixA_mJ, \
             SFFTConfig=SFFTConfig, ContamMask_I=ContamMask_I, BACKEND_4SUBTRACT=BACKEND_4SUBTRACT, \
-            NUM_CPU_THREADS_4SUBTRACT=NUM_CPU_THREADS_4SUBTRACT, VERBOSE_LEVEL=VERBOSE_LEVEL)
+            NUM_CPU_THREADS_4SUBTRACT=NUM_CPU_THREADS_4SUBTRACT, VERBOSE_LEVEL=VERBOSE_LEVEL, gpu_lock=gpu_lock)
         
         Solution, PixA_DIFF, ContamMask_CI = _tmp
         if VERBOSE_LEVEL in [1, 2]:
