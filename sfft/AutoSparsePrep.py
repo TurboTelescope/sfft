@@ -207,10 +207,46 @@ class Auto_SparsePrep:
             EVREJ_RATIO_THREH=EVREJ_RATIO_THREH, EVREJ_SAFE_MAGDEV=EVREJ_SAFE_MAGDEV, \
             StarExt_iter=StarExt_iter, XY_PriorBan=XY_PriorBan)
 
+    @staticmethod
+    def magd_surface(X, Y, MAGD, FLUXr, FLUXERRr, FLUXs, FLUXERRs, deg, SNR_MIN=20.0, NITER=5, NSIG=3.0, MAX_DEV=0.3):
+        # Robust 2D polynomial of the SCI-REF magnitude difference over the tile, so that variable rejection
+        # compares each source with the local flux ratio instead of one constant MAG_OFFSET.
+        u = 2.0 * (X - X.min()) / max(X.max() - X.min(), 1.0) - 1.0
+        v = 2.0 * (Y - Y.min()) / max(Y.max() - Y.min(), 1.0) - 1.0
+        A = np.array([u**i * v**(n - i) for n in range(deg+1) for i in range(n+1)]).T
+        with np.errstate(divide='ignore', invalid='ignore'):
+            sig = 1.0857 * np.sqrt((FLUXERRr / FLUXr)**2 + (FLUXERRs / FLUXs)**2)
+            snr = np.minimum(FLUXr / FLUXERRr, FLUXs / FLUXERRs)
+        use = np.isfinite(MAGD) & np.isfinite(sig) & (snr > SNR_MIN)
+        # fit only sources near the typical ratio: saturated or blended sources sit far off and would drag the surface
+        med = np.median(MAGD[use]) if use.any() else 0.0
+        use &= np.abs(MAGD - med) < MAX_DEV
+        # sparse tiles: lower the degree until there are 5 bright sources per term; below that, no surface
+        while deg > 0 and use.sum() < 5 * (deg + 1) * (deg + 2) // 2:
+            deg -= 1
+        A = A[:, :(deg + 1) * (deg + 2) // 2]
+        if use.sum() < 5 * A.shape[1]:
+            return None
+        w = 1.0 / (sig**2 + 0.01**2)
+        for _ in range(NITER):
+            sw = np.sqrt(w[use])
+            coef = np.linalg.lstsq(A[use] * sw[:, None], MAGD[use] * sw, rcond=None)[0]
+            r = MAGD - A @ coef
+            mad = 1.4826 * np.median(np.abs(r[use] - np.median(r[use])))
+            new = use & (np.abs(r) <= NSIG * max(mad, 0.005))
+            if new.sum() < 5 * A.shape[1] or np.array_equal(new, use):
+                break
+            use = new
+        surf = A @ coef
+        # a surface that leaves the fitted range is not trusted
+        if np.any(np.abs(surf[use] - med) > MAX_DEV):
+            return None
+        return surf
+
     def match_and_mask(self, AstSEx_GSr, FWHM_REF, PixA_SEGr, AstSEx_GSs, FWHM_SCI, PixA_SEGs, \
         MatchTol=None, MatchTolFactor=3.0, COARSE_VAR_REJECTION=True, CVREJ_MAGD_THRESH=0.12, \
         CVREJ_NSIGMA=None, MIN_SUBSOURCE=None, ELABO_VAR_REJECTION=False, EVREJ_RATIO_THREH=5.0, \
-        EVREJ_SAFE_MAGDEV=0.04, StarExt_iter=4, XY_PriorBan=None):
+        EVREJ_SAFE_MAGDEV=0.04, StarExt_iter=4, XY_PriorBan=None, VARREJ_SPDEG=None):
         # Reusable core shared by HoughAutoMask (internal SExtractor+Hough detection) and
         # externally-injected detections (turbo SubtractionPrep): cross-match per-side
         # GoodSources, reject variables, build the SFFT masks. Each AstSEx_GS must carry
@@ -268,7 +304,23 @@ class Auto_SparsePrep:
             _message += '[median: %.3f mag] >>> [weighted-median: %.3f mag]!' %(MAG_OFFSET0, MAG_OFFSET)
             print('\nMeLOn CheckPoint: %s' %_message)
 
-        _dev_MGS = MAGD_MGS - MAG_OFFSET
+        # * Reference level for variable rejection: the constant MAG_OFFSET, or (VARREJ_SPDEG) a smooth surface
+        MAGD_REF_MGS = np.full(NUM_MGS, MAG_OFFSET)
+        if VARREJ_SPDEG:
+            _surf = self.magd_surface(X=np.array(AstSEx_MGSs['X_IMAGE'], dtype=float), \
+                Y=np.array(AstSEx_MGSs['Y_IMAGE'], dtype=float), MAGD=MAGD_MGS, \
+                FLUXr=FLUX_MGSr, FLUXERRr=np.array(AstSEx_MGSr['FLUXERR_AUTO']), \
+                FLUXs=FLUX_MGSs, FLUXERRs=np.array(AstSEx_MGSs['FLUXERR_AUTO']), deg=int(VARREJ_SPDEG))
+            if _surf is None:
+                print('\nMeLOn CheckPoint: too few bright Matched-GoodSources for a variable-rejection surface, '
+                      'using the constant MAG_OFFSET!')
+            else:
+                MAGD_REF_MGS = _surf
+            if self.VERBOSE_LEVEL in [1, 2] and _surf is not None:
+                print('\nMeLOn CheckPoint: Variable-Rejection reference surface [max degree %d] spans [%.3f, %.3f] mag!' \
+                    %(int(VARREJ_SPDEG), np.percentile(_surf, 1), np.percentile(_surf, 99)))
+
+        _dev_MGS = MAGD_MGS - MAGD_REF_MGS
 
         # * Apply a coarse variable rejection (abbr. CVREJ)
         if COARSE_VAR_REJECTION:
@@ -340,14 +392,15 @@ class Auto_SparsePrep:
             # (1) MAG_OFFSET = MAG_SCI - MAG_REF = -2.5 * np.log10(FLUX_SCI/FLUX_REF)
             # (2) FLUX_SCAL = FLUX_SCI/FLUX_REF = 10**(MAG_OFFSET/-2.5)
 
-            FLUX_SCAL = 10**(MAG_OFFSET/-2.5)
+            MAGD_REF_iSS = MAGD_REF_MGS[_cvrej_keep_idx]
+            FLUX_SCAL = 10**(MAGD_REF_iSS/-2.5)
             sFLUX_iSSr = FLUX_SCAL * FLUX_iSSr
             sFLUXERR_iSSr = FLUX_SCAL * FLUXERR_iSSr
 
             _DATA = FLUX_iSSs - sFLUX_iSSr
             _SIGMA = np.sqrt(sFLUXERR_iSSr**2 + FLUXERR_iSSs**2)
             _OUTMASK = np.abs(_DATA) > EVREJ_RATIO_THREH * _SIGMA
-            _SAFEMASK = np.abs(MAGD_iSS - MAG_OFFSET) <= EVREJ_SAFE_MAGDEV
+            _SAFEMASK = np.abs(MAGD_iSS - MAGD_REF_iSS) <= EVREJ_SAFE_MAGDEV
             
             EVREJ_MASK = np.logical_and(_OUTMASK, ~_SAFEMASK)
             REJECT_MASK[_cvrej_keep_idx[EVREJ_MASK]] = True

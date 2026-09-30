@@ -308,7 +308,7 @@ class Easy_SparsePacket:
         CVREJ_NSIGMA=None, MIN_SUBSOURCE=None, ELABO_VAR_REJECTION=True, EVREJ_RATIO_THREH=5.0, \
         EVREJ_SAFE_MAGDEV=0.04, StarExt_iter=4, \
         PixA_REF_input=None, PixA_SCI_input=None, SATLEVEL_REF_input=None, SATLEVEL_SCI_input=None, \
-        XY_PriorBan=None, PreparedDetections=None, VERBOSE_LEVEL=1):
+        XY_PriorBan=None, PreparedDetections=None, VERBOSE_LEVEL=1, VARREJ_SPDEG=None):
 
         """CPU prep for Sparse-Flavor SFFT: source selection, ConvdSide/KerHW, masked image pairs.
 
@@ -340,7 +340,8 @@ class Easy_SparsePacket:
                 COARSE_VAR_REJECTION=COARSE_VAR_REJECTION, CVREJ_MAGD_THRESH=CVREJ_MAGD_THRESH, \
                 CVREJ_NSIGMA=CVREJ_NSIGMA, MIN_SUBSOURCE=MIN_SUBSOURCE, \
                 ELABO_VAR_REJECTION=ELABO_VAR_REJECTION, EVREJ_RATIO_THREH=EVREJ_RATIO_THREH, \
-                EVREJ_SAFE_MAGDEV=EVREJ_SAFE_MAGDEV, StarExt_iter=StarExt_iter, XY_PriorBan=XY_PriorBan)
+                EVREJ_SAFE_MAGDEV=EVREJ_SAFE_MAGDEV, StarExt_iter=StarExt_iter, XY_PriorBan=XY_PriorBan, \
+                VARREJ_SPDEG=VARREJ_SPDEG)
         elif XY_PriorSelect is None:
             IMAGE_MASK_METHOD = 'HOUGH-AUTO'
             if VERBOSE_LEVEL in [0, 1, 2]:
