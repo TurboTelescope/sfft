@@ -15,7 +15,9 @@ class DeferredImage:
 
 class ElementalSFFTSubtract_Cupy:
     @staticmethod
-    def ESSC(PixA_I, PixA_J, SFFTConfig, SFFTSolution=None, Subtract=False, VERBOSE_LEVEL=2, gpu_lock=None):
+    def ESSC(PixA_I, PixA_J, SFFTConfig, SFFTSolution=None, Subtract=False, VERBOSE_LEVEL=2, gpu_lock=None, \
+        ReturnDevice=False):
+        # NOTE ReturnDevice=True leaves the difference image on the device (the real part, a CuPy view)
         
         import cupy as cp
 
@@ -487,7 +489,7 @@ class ElementalSFFTSubtract_Cupy:
             
             # Get Difference & Reconstructed Images
             PixA_DIFF_GPU = SCALE_L * cp.fft.ifft2(PixA_FDIFF_GPU)
-            PixA_DIFF = cp.asnumpy(PixA_DIFF_GPU.real)
+            PixA_DIFF = PixA_DIFF_GPU.real if ReturnDevice else cp.asnumpy(PixA_DIFF_GPU.real)
             dt10 = time.time() - t10
             dtc = time.time() - tc
 
@@ -855,12 +857,12 @@ class ElementalSFFTSubtract_Numpy:
 class ElementalSFFTSubtract:
     @staticmethod
     def ESS(PixA_I, PixA_J, SFFTConfig, SFFTSolution=None, Subtract=False, \
-        BACKEND_4SUBTRACT='Cupy', NUM_CPU_THREADS_4SUBTRACT=8, VERBOSE_LEVEL=2, gpu_lock=None):
+        BACKEND_4SUBTRACT='Cupy', NUM_CPU_THREADS_4SUBTRACT=8, VERBOSE_LEVEL=2, gpu_lock=None, ReturnDevice=False):
 
         if BACKEND_4SUBTRACT == 'Cupy':
             Solution, PixA_DIFF = ElementalSFFTSubtract_Cupy.ESSC(PixA_I=PixA_I, PixA_J=PixA_J, \
                 SFFTConfig=SFFTConfig, SFFTSolution=SFFTSolution, Subtract=Subtract, VERBOSE_LEVEL=VERBOSE_LEVEL, \
-                gpu_lock=gpu_lock)
+                gpu_lock=gpu_lock, ReturnDevice=ReturnDevice)
 
         if BACKEND_4SUBTRACT == 'Numpy':
             Solution, PixA_DIFF = ElementalSFFTSubtract_Numpy.ESSN(PixA_I=PixA_I, PixA_J=PixA_J, \
@@ -872,7 +874,7 @@ class ElementalSFFTSubtract:
 class GeneralSFFTSubtract:
     @staticmethod
     def GSS(PixA_I, PixA_J, PixA_mI, PixA_mJ, SFFTConfig, ContamMask_I=None, \
-        BACKEND_4SUBTRACT='Cupy', NUM_CPU_THREADS_4SUBTRACT=8, VERBOSE_LEVEL=2, gpu_lock=None):
+        BACKEND_4SUBTRACT='Cupy', NUM_CPU_THREADS_4SUBTRACT=8, VERBOSE_LEVEL=2, gpu_lock=None, ReturnDevice=False):
 
         """
         # Perform image subtraction on I & J with SFFT parameters solved from mI & mJ.
@@ -936,7 +938,8 @@ class GeneralSFFTSubtract:
         # * Subtraction of the input image-pair (use above solution)
         PixA_DIFF = ElementalSFFTSubtract.ESS(PixA_I=PixA_I, PixA_J=PixA_J, \
             SFFTConfig=SFFTConfig, SFFTSolution=Solution, Subtract=True, BACKEND_4SUBTRACT=BACKEND_4SUBTRACT, \
-            NUM_CPU_THREADS_4SUBTRACT=NUM_CPU_THREADS_4SUBTRACT, VERBOSE_LEVEL=VERBOSE_LEVEL)[1]
+            NUM_CPU_THREADS_4SUBTRACT=NUM_CPU_THREADS_4SUBTRACT, VERBOSE_LEVEL=VERBOSE_LEVEL, \
+            ReturnDevice=ReturnDevice and BACKEND_4SUBTRACT == 'Cupy')[1]
         
         # * Identify propagated contamination region through convolving I
         ContamMask_CI = None

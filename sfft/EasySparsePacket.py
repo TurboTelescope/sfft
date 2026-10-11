@@ -428,9 +428,16 @@ class Easy_SparsePacket:
     def ESP_solve(prep, FITS_REF, FITS_SCI, FITS_DIFF=None, FITS_Solution=None, KerPolyOrder=2, \
         BGPolyOrder=0, ConstPhotRatio=True, GAIN_KEY='GAIN', SATUR_KEY='SATURATE', MaskSatContam=False, \
         PostAnomalyCheck=False, PAC_RATIO_THRESH=5.0, BACKEND_4SUBTRACT='Cupy', CUDA_DEVICE_4SUBTRACT='0', \
-        NUM_CPU_THREADS_4SUBTRACT=8, SINGLE_PRECISION=False, VERBOSE_LEVEL=1, gpu_lock=None):
+        NUM_CPU_THREADS_4SUBTRACT=8, SINGLE_PRECISION=False, VERBOSE_LEVEL=1, gpu_lock=None, ReturnDeviceDIFF=False):
 
-        """GPU solve for Sparse-Flavor SFFT: SSC config, subtraction, flux scaling, PAC, and save."""
+        """GPU solve for Sparse-Flavor SFFT: SSC config, subtraction, flux scaling, PAC, and save.
+
+        ReturnDeviceDIFF=True (Cupy backend, no PostAnomalyCheck or FITS_DIFF) returns the difference image as a
+        CuPy array left on the device."""
+
+        ReturnDeviceDIFF = ReturnDeviceDIFF and BACKEND_4SUBTRACT == 'Cupy'
+        if ReturnDeviceDIFF and (PostAnomalyCheck or FITS_DIFF is not None):
+            raise Exception('MeLOn ERROR: ReturnDeviceDIFF does not work with PostAnomalyCheck or FITS_DIFF!')
 
         SFFTPrepDict = prep['SFFTPrepDict']
         PixA_I = prep['PixA_I']
@@ -475,7 +482,8 @@ class Easy_SparsePacket:
         Tsub_start = time.time()
         _tmp = GeneralSFFTSubtract.GSS(PixA_I=PixA_I, PixA_J=PixA_J, PixA_mI=PixA_mI, PixA_mJ=PixA_mJ, \
             SFFTConfig=SFFTConfig, ContamMask_I=ContamMask_I, BACKEND_4SUBTRACT=BACKEND_4SUBTRACT, \
-            NUM_CPU_THREADS_4SUBTRACT=NUM_CPU_THREADS_4SUBTRACT, VERBOSE_LEVEL=VERBOSE_LEVEL, gpu_lock=gpu_lock)
+            NUM_CPU_THREADS_4SUBTRACT=NUM_CPU_THREADS_4SUBTRACT, VERBOSE_LEVEL=VERBOSE_LEVEL, gpu_lock=gpu_lock, \
+            ReturnDevice=ReturnDeviceDIFF)
         
         Solution, PixA_DIFF, ContamMask_CI = _tmp
         if VERBOSE_LEVEL in [1, 2]:
@@ -616,12 +624,13 @@ class Easy_SparsePacket:
             AstSEx_SS.add_column(Column(PAMASK_SS, name='MASK_PostAnomaly'))
         
         # ** final tweaks on the difference image
+        _xp = cp if ReturnDeviceDIFF else np
         if NaNmask_U is not None:
-            PixA_DIFF[NaNmask_U] = np.nan   # Mask Union-NaN regions
+            PixA_DIFF[_xp.asarray(NaNmask_U)] = np.nan   # Mask Union-NaN regions
         
         if MaskSatContam:
             ContamMask_DIFF = np.logical_or(ContamMask_CI, ContamMask_J)
-            PixA_DIFF[ContamMask_DIFF] = np.nan   # Mask Saturation-Contaminated regions
+            PixA_DIFF[_xp.asarray(ContamMask_DIFF)] = np.nan   # Mask Saturation-Contaminated regions
         
         # * Save difference image
         if FITS_DIFF is not None:
