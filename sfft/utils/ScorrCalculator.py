@@ -25,8 +25,15 @@ def _embed_centered_then_shift(small, target_shape):
     nh, nw = small.shape
     cy, cx = target_shape[0] // 2, target_shape[1] // 2
     sy, sx = cy - nh // 2, cx - nw // 2
-    big[sy: sy + nh, sx: sx + nw] = small
-    return fft.fftshift(big)
+    if not (0 <= sy and sy + nh <= target_shape[0] and 0 <= sx and sx + nw <= target_shape[1]):
+        big[sy: sy + nh, sx: sx + nw] = small
+        return fft.fftshift(big)
+    # NOTE == fftshift of the centred embedding (which moves every element by n // 2 along each axis,
+    #      modulo n), placed directly instead of rolling the whole image twice
+    rows = (np.arange(sy, sy + nh) + target_shape[0] // 2) % target_shape[0]
+    cols = (np.arange(sx, sx + nw) + target_shape[1] // 2) % target_shape[1]
+    big[np.ix_(rows, cols)] = small
+    return big
 
 
 class Scorr_Calculator:
@@ -92,7 +99,7 @@ class Scorr_Calculator:
             _prev = now
 
         nan_mask = ~np.isfinite(diff)
-        diff_filled = np.where(nan_mask, 0.0, diff).astype(np.float32)
+        diff_filled = np.where(nan_mask, 0.0, diff).astype(np.float32, copy=False)
         _lap("prep")
 
         if skysig_sci is None:
@@ -125,7 +132,7 @@ class Scorr_Calculator:
         skysig_S = SkyLevel_Estimator.SLE(PixA_obj=S[::7, ::7])[1]
         _lap("sle_S")
         if skysig_S > 0:
-            S = S / skysig_S
+            S /= skysig_S     # NOTE S is this function's own array
         if nan_mask.any():
             S = np.where(nan_mask, np.nan, S)
         _lap("norm")
