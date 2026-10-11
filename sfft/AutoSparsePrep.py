@@ -1,8 +1,7 @@
 import warnings
-import fastremap
+import numba as nb
 import numpy as np
 from astropy.io import fits
-import scipy.ndimage as ndimage
 from astropy.table import Column, hstack
 from sfft.utils.pyAstroMatic.PYSEx import PY_SEx
 from sfft.utils.SymmetricMatch import Symmetric_Match
@@ -13,26 +12,110 @@ from sfft.utils.WeightedQuantile import TopFlatten_Weighted_Quantile
 __author__ = "Lei Hu <leihu@andrew.cmu.edu>"
 __version__ = "v1.4"
 
-def _label_dilation(L, footprint):
-    """ndimage.grey_dilation(L, footprint=footprint) (mode 'reflect', centred odd footprint) for a label map
-    L >= 0 that is zero almost everywhere: the same values, computed only in each label's bounding box grown
-    by the footprint's reach, from that box grown once more (so the sub-image's own reflected border never
-    reaches the box). Every other pixel has only zeros (or reflections of them) under its footprint."""
-    r0, r1 = footprint.shape[0] // 2, footprint.shape[1] // 2
-    n0, n1 = L.shape
-    boxes = [s for s in ndimage.find_objects(L) if s is not None]
-    area = sum((s[0].stop - s[0].start + 4 * r0) * (s[1].stop - s[1].start + 4 * r1) for s in boxes)
-    if area > L.size // 2 or (L < 0).any():
-        return ndimage.grey_dilation(L, footprint=footprint)
-    out = np.zeros(L.shape, dtype=L.dtype)
-    for s in boxes:
-        a0, b0 = max(s[0].start - r0, 0), min(s[0].stop + r0, n0)
-        a1, b1 = max(s[1].start - r1, 0), min(s[1].stop + r1, n1)
-        c0, d0 = max(a0 - r0, 0), min(b0 + r0, n0)
-        c1, d1 = max(a1 - r1, 0), min(b1 + r1, n1)
-        sub = ndimage.grey_dilation(L[c0:d0, c1:d1], footprint=footprint)
-        out[a0:b0, a1:b1] = sub[a0 - c0:b0 - c0, a1 - c1:b1 - c1]
-    return out
+@nb.njit(nogil=True)
+def _signed_label(a, swap, LUT):
+    # a segmentation label (its raw 32 bits, byte swapped when swap) relabelled: LUT[a] (the SubSource's new
+    # label for an SS-island, -a for any other), -a beyond the LUT
+    a = np.int64(a)
+    if swap:
+        a = ((a & 0xFF) << 24) | (((a >> 8) & 0xFF) << 16) | (((a >> 16) & 0xFF) << 8) | ((a >> 24) & 0xFF)
+    if a >= 2147483648:
+        a -= 4294967296
+    if 0 <= a < LUT.shape[0]:
+        return LUT[a]
+    return -a
+
+
+@nb.njit(nogil=True)
+def _lmap_dilate(SEGr, SEGs, swap_r, swap_s, LUTr, LUTs, n, PZX, use_pzx, BAN, use_ban, L, PZ, banned):
+    """One pass over the (y, x) label maps: the ProhibitedZone PZ (a non-SS island on either side, or PZX), the merged
+    label map (the larger relabelled label, 0 in PZ) dilated by the L1 ball of radius n into L, and banned[v]
+    set for each label v > 0 that L holds on a banned pixel (BAN) outside PZ. The dilation keeps, per row,
+    its maxima over |dx| <= k for k = 0..n in a ring of 2n + 1 rows; L at (y, x) is the maximum over |dy| <= n
+    of row y + dy's |dx| <= n - |dy| maximum (pixels outside the map ignored, as grey_dilation's reflected
+    border only repeats nearer pixels)."""
+    ny, nx = L.shape
+    R = 2 * n + 1
+    H = np.zeros((R, n + 1, nx), np.int32)
+    for y in range(ny + n):
+        if y < ny:
+            h = H[y % R]
+            for x in range(nx):
+                r = _signed_label(SEGr[y, x], swap_r, LUTr)
+                s = _signed_label(SEGs[y, x], swap_s, LUTs)
+                pz = r < 0 or s < 0 or (use_pzx and PZX[y, x])
+                PZ[y, x] = pz
+                h[0, x] = 0 if pz else max(r, s)
+            for k in range(1, n + 1):
+                for x in range(nx):
+                    v = h[k - 1, x]
+                    if x > 0 and h[k - 1, x - 1] > v:
+                        v = h[k - 1, x - 1]
+                    if x < nx - 1 and h[k - 1, x + 1] > v:
+                        v = h[k - 1, x + 1]
+                    h[k, x] = v
+        yo = y - n
+        if yo < 0:
+            continue
+        first = True
+        for dy in range(-n, n + 1):
+            yy = yo + dy
+            if yy < 0 or yy >= ny:
+                continue
+            g = H[yy % R, n - abs(dy)]
+            if first:
+                for x in range(nx):
+                    L[yo, x] = g[x]
+                first = False
+            else:
+                for x in range(nx):
+                    if g[x] > L[yo, x]:
+                        L[yo, x] = g[x]
+        if use_ban:
+            for x in range(nx):
+                v = L[yo, x]
+                if v > 0 and BAN[yo, x] and not PZ[yo, x]:
+                    banned[v] = True
+
+
+@nb.njit(nogil=True)
+def _lmap_final(L, PZ, banned, use_ban, A):
+    # L to -128 in PZ and -64 on the banned labels, A = L > 0; returns the count of active pixels
+    ny, nx = L.shape
+    cnt = 0
+    for y in range(ny):
+        for x in range(nx):
+            v = L[y, x]
+            if PZ[y, x]:
+                v = -128
+            elif use_ban and v > 0 and banned[v]:
+                v = -64
+            L[y, x] = v
+            A[y, x] = v > 0
+            cnt += v > 0
+    return cnt
+
+
+def _label_bits(a):
+    # an integer label map as its raw 32-bit words (uint32 view, no copy) and whether they need a byte swap
+    if a.dtype.kind not in 'iu':
+        raise TypeError('segmentation maps must be integer, got %s' % a.dtype)
+    if a.dtype.itemsize != 4:
+        if a.size and (a.max() >= 2**31 or a.min() < -2**31):
+            raise ValueError('segmentation labels must fit 32 bits')
+        a = a.astype(np.int32)
+    return a.view(a.dtype.newbyteorder('=').str[0] + 'u4'), not a.dtype.isnative
+
+
+def _label_lut(old, new):
+    # LUT[k] = -k, except LUT[old[i]] = new[i] (later pairs win, as in a dict)
+    old = np.asarray(old, dtype=np.int64)
+    if old.size and old.min() < 0:
+        raise ValueError('segmentation labels of SubSources must be >= 0')
+    size = int(old.max()) + 1 if old.size else 1
+    LUT = -np.arange(size, dtype=np.int32)
+    LUT[old] = np.asarray(new, dtype=np.int32)
+    return LUT
 
 class Auto_SparsePrep:
     def __init__(self, FITS_REF, FITS_SCI, GAIN_KEY='GAIN', SATUR_KEY='ESATUR', BACK_TYPE='MANUAL', \
@@ -68,7 +151,7 @@ class Auto_SparsePrep:
         self.VERBOSE_LEVEL = VERBOSE_LEVEL
 
     def run_image_mask(self, AstSEx_SS, PixA_SEGr, PixA_SEGs, StarExt_iter, XY_PriorBan, BuildMaskedImages=True, \
-        SatMasks=True, InputsFinite=False):
+        SatMasks=True, InputsFinite=False, PriorBanMask=None, ActiveMaskOut=None):
         # NOTE SatMasks=False leaves the saturation masks None (they are read only for MaskSatContam);
         #      InputsFinite=True: the caller guarantees NaN-free images, so the NaN masks are not built
         
@@ -99,71 +182,72 @@ class Auto_SparsePrep:
             SatMask_REF = PixA_REF >= SATLEVEL_REF if SatMasks else None
             SatMask_SCI = PixA_SCI >= SATLEVEL_SCI if SatMasks else None
 
-        # * Relabel SS-islands & Flip labels of NotSS-islands
-        #   WARNING NOTE: PixA_SEGr & PixA_SEGs will be updated!
+        # * Relabel SS-islands & Flip labels of NotSS-islands, Define ProhibitedZone, Make SFFTLmap
+        #   NOTE: in two passes over the (y, x) memory order of the label maps, which are left unchanged:
+        #   an SS-island takes its SubSource's label, any other island's label is negated; the ProhibitedZone
+        #   is where either side is negative (or NaN); SFFTLmap is the larger label, 0 in the ProhibitedZone,
+        #   grey-dilated by the StarExt_iter-iterated cross (the L1 ball of that radius, 1 when below 2 as in
+        #   ndimage.iterate_structure), then -128 in the ProhibitedZone and -64 on Prior-Banned SubSources.
         SEGL_SSr = np.array(AstSEx_SS['SEGLABEL_REF']).astype(int)
         SEGL_SSs = np.array(AstSEx_SS['SEGLABEL_SCI']).astype(int)
         SEGL_SS = np.array(AstSEx_SS['SEGLABEL']).astype(int)
 
-        Mappings_REF = {}
-        for label_o, label_n in zip(SEGL_SSr, SEGL_SS): 
-            Mappings_REF[label_o] = -label_n
-        fastremap.remap(PixA_SEGr, Mappings_REF, preserve_missing_labels=True, in_place=True)
-        PixA_SEGr *= -1
-
-        Mappings_SCI = {}
-        for label_o, label_n in zip(SEGL_SSs, SEGL_SS):
-            Mappings_SCI[label_o] = -label_n
-        fastremap.remap(PixA_SEGs, Mappings_SCI, preserve_missing_labels=True, in_place=True)
-        PixA_SEGs *= -1
-
-        # * Define ProhibitedZone
         NaNmask_U = None
-        ProZone = np.logical_or(PixA_SEGr < 0, PixA_SEGs < 0)
         if not InputsFinite:
             NaNmask_REF = np.isnan(PixA_REF)
             NaNmask_SCI = np.isnan(PixA_SCI)
-        if not InputsFinite and (NaNmask_REF.any() or NaNmask_SCI.any()):
-            NaNmask_U = np.logical_or(NaNmask_REF, NaNmask_SCI)
-            ProZone[NaNmask_U] = True
+            if NaNmask_REF.any() or NaNmask_SCI.any():
+                NaNmask_U = np.logical_or(NaNmask_REF, NaNmask_SCI)
 
-        # * Make SFFTLmap 
-        SFFTLmap = np.maximum(PixA_SEGr, PixA_SEGs)
-        SFFTLmap[ProZone] = 0     # NOTE an after-burn equivalent operation
-        struct0 = ndimage.generate_binary_structure(2, 1)
-        struct = ndimage.iterate_structure(struct0, StarExt_iter)
-        SFFTLmap = _label_dilation(SFFTLmap, struct)     # NOTE == ndimage.grey_dilation, SFFTLmap >= 0 here
-        SFFTLmap[ProZone] = -128
+        SEGr, swap_r = _label_bits(PixA_SEGr.T)
+        SEGs, swap_s = _label_bits(PixA_SEGs.T)
+        L = np.empty(SEGr.shape, dtype=np.int32)
+        PZ = np.empty(SEGr.shape, dtype=bool)
+        BAN = np.zeros((1, 1), dtype=bool) if PriorBanMask is None else PriorBanMask.T
+        banned = np.zeros(max(int(SEGL_SS.max()) if SEGL_SS.size else 0, 0) + 1, dtype=bool)
+        _lmap_dilate(SEGr, SEGs, swap_r, swap_s, _label_lut(SEGL_SSr, SEGL_SS), _label_lut(SEGL_SSs, SEGL_SS), \
+            max(int(StarExt_iter), 1), np.zeros((1, 1), dtype=bool) if NaNmask_U is None else NaNmask_U.T, \
+            NaNmask_U is not None, BAN, PriorBanMask is not None, L, PZ, banned)
+        SFFTLmap, ProZone = L.T, PZ.T
 
-        if XY_PriorBan is not None:
+        if XY_PriorBan is not None or PriorBanMask is not None:
             # ** Identify the Prior-Banned SubSources and decorate AstSEx_SS
             #    NOTE: Unlike Prior-Selection, the Prior-Ban coordinates do not have to be accurate.
             #    WARNING NOTE: AstSEx_SS will be updated in this step!
+            #    NOTE: PriorBanMask (the tile's shape, True on banned pixels) bans the same as the coordinates
+            #          of its True pixels given as XY_PriorBan (x + 1, y + 1)
 
-            _XY_PB = np.asarray(XY_PriorBan)
-            SEGL_PB = np.unique(SFFTLmap[(_XY_PB[:, 0] - 0.5).astype(int), (_XY_PB[:, 1] - 0.5).astype(int)])
-            SEGL_PB = SEGL_PB[SEGL_PB > 0] 
-            PBMASK_SS = np.in1d(SEGL_SS, SEGL_PB)
+            NUM_PB = 0
+            if XY_PriorBan is not None:
+                _XY_PB = np.asarray(XY_PriorBan)
+                _ix, _iy = (_XY_PB[:, 0] - 0.5).astype(int), (_XY_PB[:, 1] - 0.5).astype(int)
+                _v = SFFTLmap[_ix, _iy]
+                banned[_v[(_v > 0) & ~ProZone[_ix, _iy]]] = True
+                NUM_PB += XY_PriorBan.shape[0]
+            if PriorBanMask is not None:
+                NUM_PB += int(np.count_nonzero(PriorBanMask))
+            PBMASK_SS = np.zeros(len(SEGL_SS), dtype=bool)
+            _in = (SEGL_SS > 0) & (SEGL_SS < banned.size)
+            PBMASK_SS[_in] = banned[SEGL_SS[_in]]
             AstSEx_SS.add_column(Column(PBMASK_SS, name='MASK_PriorBan'))
             
             if self.VERBOSE_LEVEL in [1, 2]:
-                _message = 'Find / Given [%d / %d] Prior-Banned ' %(np.sum(PBMASK_SS), XY_PriorBan.shape[0])
+                _message = 'Find / Given [%d / %d] Prior-Banned ' %(np.sum(PBMASK_SS), NUM_PB)
                 _message += 'in current [%d] SubSources!' %(len(AstSEx_SS))
                 print('MeLOn CheckPoint: %s' %_message)
-            
-            # ** Update Label Map (SFFTLmap) by inactivating the Prior-Banned SubSources
-            _mappings = {label: -64 for label in SEGL_SS[PBMASK_SS]}
-            fastremap.remap(SFFTLmap, _mappings, preserve_missing_labels=True, in_place=True)
         else:
             if self.VERBOSE_LEVEL in [1, 2]:
                 print('MeLOn CheckPoint: SKIP, NO Prior-Banned Coordinates Given!')
 
-        # * Create ActiveMask
+        # * Update Label Map (SFFTLmap) by inactivating the Prior-Banned SubSources & Create ActiveMask
         #   NOTE: The preparation can guarantee that mREF & mSCI are NaN-Free !
-        ActiveMask = SFFTLmap > 0
+        #   NOTE: ActiveMaskOut (bool, the tile's shape) receives the mask instead of a new array
+        A = np.empty(L.shape, dtype=bool) if ActiveMaskOut is None else ActiveMaskOut.T
+        NUM_ACTIVE = _lmap_final(L, PZ, banned, XY_PriorBan is not None or PriorBanMask is not None, A)
+        ActiveMask = A.T
         
         if self.VERBOSE_LEVEL in [1, 2]:
-            ActivePROP = np.sum(ActiveMask) / (ActiveMask.shape[0] * ActiveMask.shape[1])
+            ActivePROP = NUM_ACTIVE / (ActiveMask.shape[0] * ActiveMask.shape[1])
             print('MeLOn CheckPoint: Active-Mask (Non-Prior-Banned SubSources) Pixel Proportion [%s]' \
                    %('{:.2%}'.format(ActivePROP)))
 
@@ -276,7 +360,7 @@ class Auto_SparsePrep:
         MatchTol=None, MatchTolFactor=3.0, COARSE_VAR_REJECTION=True, CVREJ_MAGD_THRESH=0.12, \
         CVREJ_NSIGMA=None, MIN_SUBSOURCE=None, ELABO_VAR_REJECTION=False, EVREJ_RATIO_THREH=5.0, \
         EVREJ_SAFE_MAGDEV=0.04, StarExt_iter=4, XY_PriorBan=None, VARREJ_SPDEG=None, BuildMaskedImages=True, \
-        SatMasks=True, InputsFinite=False):
+        SatMasks=True, InputsFinite=False, PriorBanMask=None, ActiveMaskOut=None):
         # Reusable core shared by HoughAutoMask (internal SExtractor+Hough detection) and
         # externally-injected detections (turbo SubtractionPrep): cross-match per-side
         # GoodSources, reject variables, build the SFFT masks. Each AstSEx_GS must carry
@@ -479,7 +563,8 @@ class Auto_SparsePrep:
         # * Run Image Masking (P.S. some SubSources might be marked as invalid by the Prior-Ban list)
         SFFTPrepDict = self.run_image_mask(AstSEx_SS=AstSEx_SS, PixA_SEGr=PixA_SEGr, \
             PixA_SEGs=PixA_SEGs, StarExt_iter=StarExt_iter, XY_PriorBan=XY_PriorBan, \
-            BuildMaskedImages=BuildMaskedImages, SatMasks=SatMasks, InputsFinite=InputsFinite)
+            BuildMaskedImages=BuildMaskedImages, SatMasks=SatMasks, InputsFinite=InputsFinite, \
+            PriorBanMask=PriorBanMask, ActiveMaskOut=ActiveMaskOut)
         
         # * Append Additional information
         SFFTPrepDict['MAG_OFFSET'] = MAG_OFFSET
