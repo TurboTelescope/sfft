@@ -103,7 +103,7 @@ class Auto_SparsePrep:
             ProZone[NaNmask_U] = True
 
         # * Make SFFTLmap 
-        SFFTLmap = np.max(np.array([PixA_SEGr, PixA_SEGs]), axis=0)
+        SFFTLmap = np.maximum(PixA_SEGr, PixA_SEGs)
         SFFTLmap[ProZone] = 0     # NOTE an after-burn equivalent operation
         struct0 = ndimage.generate_binary_structure(2, 1)
         struct = ndimage.iterate_structure(struct0, StarExt_iter)
