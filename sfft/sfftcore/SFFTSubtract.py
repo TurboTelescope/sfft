@@ -131,7 +131,7 @@ class ElementalSFFTSubtract_Cupy:
         _func(args=(REF_ij_GPU, REF_pq_GPU, PixA_CX_GPU, PixA_CY_GPU, PixA_I_GPU, \
             SPixA_Iij_GPU, SPixA_Tpq_GPU), block=TpB_PIX, grid=BpG_PIX)
         
-        del PixA_I_GPU
+        del PixA_I_GPU, PixA_X_GPU, PixA_Y_GPU, PixA_CX_GPU, PixA_CY_GPU
         dt1 = time.time() - t1
 
         t2 = time.time()
@@ -146,18 +146,18 @@ class ElementalSFFTSubtract_Cupy:
 
         # * Make DFT of J, Iij, Tpq and their conjugates
         PixA_FJ_GPU = cp.empty((N0, N1), dtype=COMPLEX_DTYPE)
-        PixA_FJ_GPU[:, :] = PixA_J_GPU.astype(COMPLEX_DTYPE)
+        PixA_FJ_GPU[:, :] = PixA_J_GPU
         PixA_FJ_GPU[:, :] = cp.fft.fft2(PixA_FJ_GPU)
         PixA_FJ_GPU[:, :] *= SCALE
 
         SPixA_FIij_GPU = cp.empty((Fij, N0, N1), dtype=COMPLEX_DTYPE)
-        SPixA_FIij_GPU[:, :, :] = SPixA_Iij_GPU.astype(COMPLEX_DTYPE)
+        SPixA_FIij_GPU[:, :, :] = SPixA_Iij_GPU
         for k in range(Fij): 
             SPixA_FIij_GPU[k: k+1] = cp.fft.fft2(SPixA_FIij_GPU[k: k+1])
         SPixA_FIij_GPU[:, :] *= SCALE
 
         SPixA_FTpq_GPU = cp.empty((Fpq, N0, N1), dtype=COMPLEX_DTYPE)
-        SPixA_FTpq_GPU[:, :, :] = SPixA_Tpq_GPU.astype(COMPLEX_DTYPE)
+        SPixA_FTpq_GPU[:, :, :] = SPixA_Tpq_GPU
         for k in range(Fpq): 
             SPixA_FTpq_GPU[k: k+1] = cp.fft.fft2(SPixA_FTpq_GPU[k: k+1])
         SPixA_FTpq_GPU[:, :] *= SCALE
