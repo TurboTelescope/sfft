@@ -244,22 +244,25 @@ class ElementalSFFTSubtract_Cupy:
 
             # * -- -- -- -- -- -- -- -- Establish Linear System through 𝛀  -- -- -- -- -- -- -- -- *
 
-            # a. Hadamard Product for 𝛀 [HpOMG]
-            _module = SFFTModule_dict['HadProd_OMG']
-            _func = _module.get_function('kmain')
-            HpOMG_GPU = cp.empty((FOMG, N0, N1), dtype=COMPLEX_DTYPE)
-            _func(args=(SREF_iji0j0_GPU, SPixA_FIij_GPU, HpOMG_GPU), \
-                block=TpB_PIX, grid=BpG_PIX)
+            def _PreGreek(name, SREF_GPU, inputs, F, CH, POST_SCALE):
+                # PreGreek = POST_SCALE * Re[SCALE * DFT(HpGreek)], the Hadamard products HpGreek made CH slices
+                # at a time (the HadProd kernels are compiled for CH slices): only CH complex slices on the device
+                _func = SFFTModule_dict[name].get_function('kmain')
+                PreGreek_GPU = cp.empty((F, N0, N1), dtype=REAL_DTYPE)
+                HpGreek_GPU = cp.empty((CH, N0, N1), dtype=COMPLEX_DTYPE)
+                for c0 in range(0, F, CH):
+                    _func(args=(SREF_GPU[c0: c0+CH], *inputs, HpGreek_GPU), block=TpB_PIX, grid=BpG_PIX)
+                    for k in range(CH):
+                        HpGreek_GPU[k: k+1] = cp.fft.fft2(HpGreek_GPU[k: k+1])
+                    HpGreek_GPU *= SCALE
+                    PreGreek_GPU[c0: c0+CH] = HpGreek_GPU.real
+                    if POST_SCALE is not None:
+                        PreGreek_GPU[c0: c0+CH] *= POST_SCALE
+                del HpGreek_GPU
+                return PreGreek_GPU
 
-            # b. PreOMG = SCALE * Re[DFT(HpOMG)]
-            for k in range(FOMG):
-                HpOMG_GPU[k: k+1] = cp.fft.fft2(HpOMG_GPU[k: k+1])
-            HpOMG_GPU *= SCALE
-
-            PreOMG_GPU = cp.empty((FOMG, N0, N1), dtype=REAL_DTYPE)
-            PreOMG_GPU[:, :, :] = HpOMG_GPU.real
-            PreOMG_GPU[:, :, :] *= SCALE
-            del HpOMG_GPU
+            # a. Hadamard Product for 𝛀 [HpOMG] & b. PreOMG = SCALE * Re[DFT(HpOMG)]
+            PreOMG_GPU = _PreGreek('HadProd_OMG', SREF_iji0j0_GPU, (SPixA_FIij_GPU,), FOMG, Fij, SCALE)
 
             # c. Fill Linear System with PreOMG
             _module = SFFTModule_dict['FillLS_OMG']
@@ -273,21 +276,8 @@ class ElementalSFFTSubtract_Cupy:
             t4 = time.time()
             # * -- -- -- -- -- -- -- -- Establish Linear System through 𝜦  -- -- -- -- -- -- -- -- *
 
-            # a. Hadamard Product for 𝜦 [HpGAM]
-            _module = SFFTModule_dict['HadProd_GAM']
-            _func = _module.get_function('kmain')
-            HpGAM_GPU = cp.empty((FGAM, N0, N1), dtype=COMPLEX_DTYPE)
-            _func(args=(SREF_ijpq_GPU, SPixA_FIij_GPU, SPixA_FTpq_GPU, HpGAM_GPU), \
-                block=TpB_PIX, grid=BpG_PIX)
-
-            # b. PreGAM = 1 * Re[DFT(HpGAM)]
-            for k in range(FGAM):
-                HpGAM_GPU[k: k+1] = cp.fft.fft2(HpGAM_GPU[k: k+1])
-            HpGAM_GPU *= SCALE
-
-            PreGAM_GPU = cp.empty((FGAM, N0, N1), dtype=REAL_DTYPE)
-            PreGAM_GPU[:, :, :] = HpGAM_GPU.real
-            del HpGAM_GPU
+            # a. Hadamard Product for 𝜦 [HpGAM] & b. PreGAM = 1 * Re[DFT(HpGAM)]
+            PreGAM_GPU = _PreGreek('HadProd_GAM', SREF_ijpq_GPU, (SPixA_FIij_GPU, SPixA_FTpq_GPU), FGAM, Fpq, None)
 
             # c. Fill Linear System with PreGAM
             _module = SFFTModule_dict['FillLS_GAM']
@@ -301,21 +291,8 @@ class ElementalSFFTSubtract_Cupy:
             t5 = time.time()
             # * -- -- -- -- -- -- -- -- Establish Linear System through 𝜳  -- -- -- -- -- -- -- -- *
             
-            # a. Hadamard Product for 𝜳  [HpPSI]
-            _module = SFFTModule_dict['HadProd_PSI']
-            _func = _module.get_function('kmain')
-            HpPSI_GPU = cp.empty((FPSI, N0, N1), dtype=COMPLEX_DTYPE)
-            _func(args=(SREF_pqij_GPU, SPixA_FIij_GPU, SPixA_FTpq_GPU, HpPSI_GPU), \
-                block=TpB_PIX, grid=BpG_PIX)
-
-            # b. PrePSI = 1 * Re[DFT(HpPSI)]
-            for k in range(FPSI):
-                HpPSI_GPU[k: k+1] = cp.fft.fft2(HpPSI_GPU[k: k+1])
-            HpPSI_GPU *= SCALE
-
-            PrePSI_GPU = cp.empty((FPSI, N0, N1), dtype=REAL_DTYPE)
-            PrePSI_GPU[:, :, :] = HpPSI_GPU.real
-            del HpPSI_GPU
+            # a. Hadamard Product for 𝜳  [HpPSI] & b. PrePSI = 1 * Re[DFT(HpPSI)]
+            PrePSI_GPU = _PreGreek('HadProd_PSI', SREF_pqij_GPU, (SPixA_FIij_GPU, SPixA_FTpq_GPU), FPSI, Fij, None)
 
             # c. Fill Linear System with PrePSI
             _module = SFFTModule_dict['FillLS_PSI']
@@ -329,22 +306,8 @@ class ElementalSFFTSubtract_Cupy:
             t6 = time.time()
             # * -- -- -- -- -- -- -- -- Establish Linear System through 𝚽  -- -- -- -- -- -- -- -- *
             
-            # a. Hadamard Product for 𝚽  [HpPHI]
-            _module = SFFTModule_dict['HadProd_PHI']
-            _func = _module.get_function('kmain')
-            HpPHI_GPU = cp.empty((FPHI, N0, N1), dtype=COMPLEX_DTYPE)
-            _func(args=(SREF_pqp0q0_GPU, SPixA_FTpq_GPU, HpPHI_GPU), \
-                block=TpB_PIX, grid=BpG_PIX)
-
-            # b. PrePHI = SCALE_L * Re[DFT(HpPHI)]
-            for k in range(FPHI):
-                HpPHI_GPU[k: k+1] = cp.fft.fft2(HpPHI_GPU[k: k+1])
-            HpPHI_GPU *= SCALE
-
-            PrePHI_GPU = cp.empty((FPHI, N0, N1), dtype=REAL_DTYPE)
-            PrePHI_GPU[:, :, :] = HpPHI_GPU.real
-            PrePHI_GPU[:, :, :] *= SCALE_L
-            del HpPHI_GPU
+            # a. Hadamard Product for 𝚽  [HpPHI] & b. PrePHI = SCALE_L * Re[DFT(HpPHI)]
+            PrePHI_GPU = _PreGreek('HadProd_PHI', SREF_pqp0q0_GPU, (SPixA_FTpq_GPU,), FPHI, Fpq, SCALE_L)
 
             # c. Fill Linear System with PrePHI
             _module = SFFTModule_dict['FillLS_PHI']

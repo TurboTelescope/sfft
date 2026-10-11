@@ -174,7 +174,8 @@ class SingleSFFTConfigure_Cupy:
         # ************************************ HadProd_OMG.cu & FillLS_OMG.cu ************************************ #
 
         # ** Hadamard Product [𝛀]
-        _refdict = {'N0': N0, 'N1': N1, 'Fij': Fij, 'FOMG': FOMG, 'ThreadPerB': MaxThreadPerB}
+        # NOTE the kernel makes Fij of the FOMG slices per launch (ESSC goes through them in chunks)
+        _refdict = {'N0': N0, 'N1': N1, 'Fij': Fij, 'FOMG': Fij, 'ThreadPerB': MaxThreadPerB}
         _funcstr = r"""
         #include "cuComplex.h"
         extern "C" __global__ void kmain(int SREF_iji0j0_GPU[%(FOMG)s][2],
@@ -305,7 +306,8 @@ class SingleSFFTConfigure_Cupy:
         # ************************************ HadProd_GAM.cu & FillLS_GAM.cu ************************************ #
 
         # ** Hadamard Product [𝜦]
-        _refdict = {'N0': N0, 'N1': N1, 'Fij': Fij, 'Fpq': Fpq, 'FGAM': FGAM, 'ThreadPerB': MaxThreadPerB}
+        # NOTE the kernel makes Fpq of the FGAM slices per launch (ESSC goes through them in chunks)
+        _refdict = {'N0': N0, 'N1': N1, 'Fij': Fij, 'Fpq': Fpq, 'FGAM': Fpq, 'ThreadPerB': MaxThreadPerB}
         _funcstr = r"""
         #include "cuComplex.h"
         extern "C" __global__ void kmain(int SREF_ijpq_GPU[%(FGAM)s][2], 
@@ -409,7 +411,8 @@ class SingleSFFTConfigure_Cupy:
         # ************************************ HadProd_PSI.cu & FillLS_PSI.cu ************************************ #
 
         # ** Hadamard Product [𝜳]
-        _refdict = {'N0': N0, 'N1': N1, 'Fij': Fij, 'Fpq': Fpq, 'FPSI': FPSI, 'ThreadPerB': MaxThreadPerB}
+        # NOTE the kernel makes Fij of the FPSI slices per launch (ESSC goes through them in chunks)
+        _refdict = {'N0': N0, 'N1': N1, 'Fij': Fij, 'Fpq': Fpq, 'FPSI': Fij, 'ThreadPerB': MaxThreadPerB}
         _funcstr = r"""
         #include "cuComplex.h"
         extern "C" __global__ void kmain(int SREF_pqij_GPU[%(FPSI)s][2],
@@ -513,7 +516,8 @@ class SingleSFFTConfigure_Cupy:
         # ************************************ HadProd_PHI.cu & FillLS_PHI.cu ************************************ #
 
         # ** Hadamard Product [𝚽]
-        _refdict = {'N0': N0, 'N1': N1, 'Fpq': Fpq, 'FPHI': FPHI, 'ThreadPerB': MaxThreadPerB}
+        # NOTE the kernel makes Fpq of the FPHI slices per launch (ESSC goes through them in chunks)
+        _refdict = {'N0': N0, 'N1': N1, 'Fpq': Fpq, 'FPHI': Fpq, 'ThreadPerB': MaxThreadPerB}
         _funcstr = r"""
         #include "cuComplex.h"
         extern "C" __global__ void kmain(int SREF_pqp0q0_GPU[%(FPHI)s][2], 
