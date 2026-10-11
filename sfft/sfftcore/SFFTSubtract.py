@@ -96,12 +96,12 @@ class ElementalSFFTSubtract_Cupy:
         if not PixA_I.flags['C_CONTIGUOUS']:
             PixA_I = np.ascontiguousarray(PixA_I, REAL_DTYPE)
             PixA_I_GPU = cp.array(PixA_I)
-        else: PixA_I_GPU = cp.array(PixA_I.astype(REAL_DTYPE))
+        else: PixA_I_GPU = cp.array(PixA_I.astype(REAL_DTYPE, copy=False))
         
         if not PixA_J.flags['C_CONTIGUOUS']:
             PixA_J = np.ascontiguousarray(PixA_J, REAL_DTYPE)
             PixA_J_GPU = cp.array(PixA_J)
-        else: PixA_J_GPU = cp.array(PixA_J.astype(REAL_DTYPE))
+        else: PixA_J_GPU = cp.array(PixA_J.astype(REAL_DTYPE, copy=False))
         dt0 = time.time() - t0
 
         # * Symbol Convention NOTE
