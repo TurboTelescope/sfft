@@ -36,6 +36,21 @@ def _embed_centered_then_shift(small, target_shape):
     return big
 
 
+def _embed_centered_then_shift_device(xp, small, target_shape):
+    # _embed_centered_then_shift built on the device (xp = cupy): the same placement of the same float32 values
+    big = xp.zeros(target_shape, dtype=np.float32)
+    nh, nw = small.shape
+    cy, cx = target_shape[0] // 2, target_shape[1] // 2
+    sy, sx = cy - nh // 2, cx - nw // 2
+    if not (0 <= sy and sy + nh <= target_shape[0] and 0 <= sx and sx + nw <= target_shape[1]):
+        big[sy: sy + nh, sx: sx + nw] = xp.asarray(small)
+        return xp.fft.fftshift(big)
+    rows = xp.asarray((np.arange(sy, sy + nh) + target_shape[0] // 2) % target_shape[0])
+    cols = xp.asarray((np.arange(sx, sx + nw) + target_shape[1] // 2) % target_shape[1])
+    big[rows[:, None], cols[None, :]] = xp.asarray(np.asarray(small, dtype=np.float32))
+    return big
+
+
 class Scorr_Calculator:
 
     """Decorrelated ZOGY score image (Scorr) on an sfft difference image.
@@ -67,6 +82,53 @@ class Scorr_Calculator:
             if s > 0:
                 P_D /= s
             return P_D
+
+    @staticmethod
+    def compute_decorr_device(diff, K_sfft, fwhm_convd_side_px, skysig_sci, skysig_ref, conv_side="REF",
+                              VERBOSE_LEVEL=0):
+        """compute_decorr for a difference image already on the GPU (CuPy, N0 x N1, any layout): the same steps
+        on the device, with the sky sigmas given, and S returned on the device. Only the [::7, ::7] sample of S
+        that the S sky level is measured on comes back to the host."""
+        import cupy as xp
+        from sfft.utils.DeCorrelationCalculator import DeCorrelation_Calculator
+
+        nan_mask = ~xp.isfinite(diff)
+        diff_filled = xp.where(nan_mask, xp.float32(0), diff).astype(np.float32, copy=False)
+        if diff.flags.f_contiguous and not diff.flags.c_contiguous:
+            # NOTE in the image's memory order, as compute_decorr hands it to the FFT (the same transform values)
+            diff_filled = xp.asfortranarray(diff_filled)
+        if conv_side == "REF":
+            skysig_conv, skysig_unconv = skysig_ref, skysig_sci
+        else:
+            skysig_conv, skysig_unconv = skysig_sci, skysig_ref
+        KDeCo = DeCorrelation_Calculator.DCC(
+            MK_JLst=[None], SkySig_JLst=[skysig_unconv],
+            MK_ILst=[K_sfft], SkySig_ILst=[skysig_conv], MK_Fin=None,
+            VERBOSE_LEVEL=VERBOSE_LEVEL)
+
+        gaussian_half = max(5, int(np.ceil(5.0 * fwhm_convd_side_px * FWHM_TO_SIGMA)))
+        p_conv = _gaussian_kernel_2d(fwhm_convd_side_px, gaussian_half)
+        K_big = _embed_centered_then_shift_device(xp, K_sfft, diff.shape)
+        P_conv_big = _embed_centered_then_shift_device(xp, p_conv, diff.shape)
+        P_D = xp.real(xp.fft.ifft2(xp.fft.fft2(K_big) * xp.fft.fft2(P_conv_big)))
+        del K_big, P_conv_big
+        s = P_D.sum()
+        if s > 0:
+            P_D = P_D / s
+
+        FKDECO = xp.fft.fft2(_embed_centered_then_shift_device(xp, KDeCo, diff.shape))
+        FPSF = xp.fft.fft2(P_D) * FKDECO
+        del P_D
+        FdDIFF = xp.fft.fft2(diff_filled) * FKDECO
+        del diff_filled, FKDECO
+        S = xp.fft.ifft2(FdDIFF * xp.conj(FPSF)).real
+        del FdDIFF, FPSF
+        skysig_S = SkyLevel_Estimator.SLE(PixA_obj=xp.asnumpy(S[::7, ::7]))[1]
+        if skysig_S > 0:
+            S /= S.dtype.type(skysig_S)    # NOTE as numpy divides float32 S by the (float64) sky sigma
+        if nan_mask.any():
+            S = xp.where(nan_mask, xp.float32(np.nan), S)
+        return S
 
     @staticmethod
     def sky_sigma(PixA):
