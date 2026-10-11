@@ -13,6 +13,27 @@ from sfft.utils.WeightedQuantile import TopFlatten_Weighted_Quantile
 __author__ = "Lei Hu <leihu@andrew.cmu.edu>"
 __version__ = "v1.4"
 
+def _label_dilation(L, footprint):
+    """ndimage.grey_dilation(L, footprint=footprint) (mode 'reflect', centred odd footprint) for a label map
+    L >= 0 that is zero almost everywhere: the same values, computed only in each label's bounding box grown
+    by the footprint's reach, from that box grown once more (so the sub-image's own reflected border never
+    reaches the box). Every other pixel has only zeros (or reflections of them) under its footprint."""
+    r0, r1 = footprint.shape[0] // 2, footprint.shape[1] // 2
+    n0, n1 = L.shape
+    boxes = [s for s in ndimage.find_objects(L) if s is not None]
+    area = sum((s[0].stop - s[0].start + 4 * r0) * (s[1].stop - s[1].start + 4 * r1) for s in boxes)
+    if area > L.size // 2 or (L < 0).any():
+        return ndimage.grey_dilation(L, footprint=footprint)
+    out = np.zeros(L.shape, dtype=L.dtype)
+    for s in boxes:
+        a0, b0 = max(s[0].start - r0, 0), min(s[0].stop + r0, n0)
+        a1, b1 = max(s[1].start - r1, 0), min(s[1].stop + r1, n1)
+        c0, d0 = max(a0 - r0, 0), min(b0 + r0, n0)
+        c1, d1 = max(a1 - r1, 0), min(b1 + r1, n1)
+        sub = ndimage.grey_dilation(L[c0:d0, c1:d1], footprint=footprint)
+        out[a0:b0, a1:b1] = sub[a0 - c0:b0 - c0, a1 - c1:b1 - c1]
+    return out
+
 class Auto_SparsePrep:
     def __init__(self, FITS_REF, FITS_SCI, GAIN_KEY='GAIN', SATUR_KEY='ESATUR', BACK_TYPE='MANUAL', \
         BACK_VALUE=0.0, BACK_SIZE=64, BACK_FILTERSIZE=3, DETECT_THRESH=2.0, ANALYSIS_THRESH=2.0, DETECT_MINAREA=5, \
@@ -107,7 +128,7 @@ class Auto_SparsePrep:
         SFFTLmap[ProZone] = 0     # NOTE an after-burn equivalent operation
         struct0 = ndimage.generate_binary_structure(2, 1)
         struct = ndimage.iterate_structure(struct0, StarExt_iter)
-        SFFTLmap = ndimage.grey_dilation(SFFTLmap, footprint=struct)
+        SFFTLmap = _label_dilation(SFFTLmap, struct)     # NOTE == ndimage.grey_dilation, SFFTLmap >= 0 here
         SFFTLmap[ProZone] = -128
 
         if XY_PriorBan is not None:
