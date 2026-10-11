@@ -67,7 +67,10 @@ class Auto_SparsePrep:
         self.BoundarySIZE = BoundarySIZE
         self.VERBOSE_LEVEL = VERBOSE_LEVEL
 
-    def run_image_mask(self, AstSEx_SS, PixA_SEGr, PixA_SEGs, StarExt_iter, XY_PriorBan, BuildMaskedImages=True):
+    def run_image_mask(self, AstSEx_SS, PixA_SEGr, PixA_SEGs, StarExt_iter, XY_PriorBan, BuildMaskedImages=True, \
+        SatMasks=True, InputsFinite=False):
+        # NOTE SatMasks=False leaves the saturation masks None (they are read only for MaskSatContam);
+        #      InputsFinite=True: the caller guarantees NaN-free images, so the NaN masks are not built
         
         if self.PixA_REF_input is not None:
             PixA_REF = self.PixA_REF_input.T
@@ -93,8 +96,8 @@ class Auto_SparsePrep:
                 SATLEVEL_SCI = self.SATLEVEL_SCI_input
             else:
                 SATLEVEL_SCI = fits.getheader(self.FITS_SCI, ext=0)[self.SATUR_KEY]
-            SatMask_REF = PixA_REF >= SATLEVEL_REF
-            SatMask_SCI = PixA_SCI >= SATLEVEL_SCI
+            SatMask_REF = PixA_REF >= SATLEVEL_REF if SatMasks else None
+            SatMask_SCI = PixA_SCI >= SATLEVEL_SCI if SatMasks else None
 
         # * Relabel SS-islands & Flip labels of NotSS-islands
         #   WARNING NOTE: PixA_SEGr & PixA_SEGs will be updated!
@@ -116,10 +119,11 @@ class Auto_SparsePrep:
 
         # * Define ProhibitedZone
         NaNmask_U = None
-        NaNmask_REF = np.isnan(PixA_REF)
-        NaNmask_SCI = np.isnan(PixA_SCI)
         ProZone = np.logical_or(PixA_SEGr < 0, PixA_SEGs < 0)
-        if NaNmask_REF.any() or NaNmask_SCI.any():
+        if not InputsFinite:
+            NaNmask_REF = np.isnan(PixA_REF)
+            NaNmask_SCI = np.isnan(PixA_SCI)
+        if not InputsFinite and (NaNmask_REF.any() or NaNmask_SCI.any()):
             NaNmask_U = np.logical_or(NaNmask_REF, NaNmask_SCI)
             ProZone[NaNmask_U] = True
 
@@ -271,7 +275,8 @@ class Auto_SparsePrep:
     def match_and_mask(self, AstSEx_GSr, FWHM_REF, PixA_SEGr, AstSEx_GSs, FWHM_SCI, PixA_SEGs, \
         MatchTol=None, MatchTolFactor=3.0, COARSE_VAR_REJECTION=True, CVREJ_MAGD_THRESH=0.12, \
         CVREJ_NSIGMA=None, MIN_SUBSOURCE=None, ELABO_VAR_REJECTION=False, EVREJ_RATIO_THREH=5.0, \
-        EVREJ_SAFE_MAGDEV=0.04, StarExt_iter=4, XY_PriorBan=None, VARREJ_SPDEG=None, BuildMaskedImages=True):
+        EVREJ_SAFE_MAGDEV=0.04, StarExt_iter=4, XY_PriorBan=None, VARREJ_SPDEG=None, BuildMaskedImages=True, \
+        SatMasks=True, InputsFinite=False):
         # Reusable core shared by HoughAutoMask (internal SExtractor+Hough detection) and
         # externally-injected detections (turbo SubtractionPrep): cross-match per-side
         # GoodSources, reject variables, build the SFFT masks. Each AstSEx_GS must carry
@@ -474,7 +479,7 @@ class Auto_SparsePrep:
         # * Run Image Masking (P.S. some SubSources might be marked as invalid by the Prior-Ban list)
         SFFTPrepDict = self.run_image_mask(AstSEx_SS=AstSEx_SS, PixA_SEGr=PixA_SEGr, \
             PixA_SEGs=PixA_SEGs, StarExt_iter=StarExt_iter, XY_PriorBan=XY_PriorBan, \
-            BuildMaskedImages=BuildMaskedImages)
+            BuildMaskedImages=BuildMaskedImages, SatMasks=SatMasks, InputsFinite=InputsFinite)
         
         # * Append Additional information
         SFFTPrepDict['MAG_OFFSET'] = MAG_OFFSET
