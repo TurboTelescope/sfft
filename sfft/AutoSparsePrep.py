@@ -46,7 +46,7 @@ class Auto_SparsePrep:
         self.BoundarySIZE = BoundarySIZE
         self.VERBOSE_LEVEL = VERBOSE_LEVEL
 
-    def run_image_mask(self, AstSEx_SS, PixA_SEGr, PixA_SEGs, StarExt_iter, XY_PriorBan):
+    def run_image_mask(self, AstSEx_SS, PixA_SEGr, PixA_SEGs, StarExt_iter, XY_PriorBan, BuildMaskedImages=True):
         
         if self.PixA_REF_input is not None:
             PixA_REF = self.PixA_REF_input.T
@@ -143,10 +143,13 @@ class Auto_SparsePrep:
                    %('{:.2%}'.format(ActivePROP)))
 
         # * Produce masked images PixA_mREF & PixA_mSCI
-        PixA_mREF = PixA_REF.copy()
-        PixA_mSCI = PixA_SCI.copy()
-        PixA_mREF[~ActiveMask] = 0.0      # NOTE REF has been sky-subtracted
-        PixA_mSCI[~ActiveMask] = 0.0      # NOTE SCI has been sky-subtracted
+        #   NOTE: BuildMaskedImages=False leaves them to the caller (the images with zeros off the Active-Mask)
+        PixA_mREF, PixA_mSCI = None, None
+        if BuildMaskedImages:
+            PixA_mREF = PixA_REF.copy()
+            PixA_mSCI = PixA_SCI.copy()
+            PixA_mREF[~ActiveMask] = 0.0      # NOTE REF has been sky-subtracted
+            PixA_mSCI[~ActiveMask] = 0.0      # NOTE SCI has been sky-subtracted
 
         # * Create sfft-prep master dictionary
         SFFTPrepDict = {}
@@ -247,7 +250,7 @@ class Auto_SparsePrep:
     def match_and_mask(self, AstSEx_GSr, FWHM_REF, PixA_SEGr, AstSEx_GSs, FWHM_SCI, PixA_SEGs, \
         MatchTol=None, MatchTolFactor=3.0, COARSE_VAR_REJECTION=True, CVREJ_MAGD_THRESH=0.12, \
         CVREJ_NSIGMA=None, MIN_SUBSOURCE=None, ELABO_VAR_REJECTION=False, EVREJ_RATIO_THREH=5.0, \
-        EVREJ_SAFE_MAGDEV=0.04, StarExt_iter=4, XY_PriorBan=None, VARREJ_SPDEG=None):
+        EVREJ_SAFE_MAGDEV=0.04, StarExt_iter=4, XY_PriorBan=None, VARREJ_SPDEG=None, BuildMaskedImages=True):
         # Reusable core shared by HoughAutoMask (internal SExtractor+Hough detection) and
         # externally-injected detections (turbo SubtractionPrep): cross-match per-side
         # GoodSources, reject variables, build the SFFT masks. Each AstSEx_GS must carry
@@ -449,7 +452,8 @@ class Auto_SparsePrep:
         
         # * Run Image Masking (P.S. some SubSources might be marked as invalid by the Prior-Ban list)
         SFFTPrepDict = self.run_image_mask(AstSEx_SS=AstSEx_SS, PixA_SEGr=PixA_SEGr, \
-            PixA_SEGs=PixA_SEGs, StarExt_iter=StarExt_iter, XY_PriorBan=XY_PriorBan)
+            PixA_SEGs=PixA_SEGs, StarExt_iter=StarExt_iter, XY_PriorBan=XY_PriorBan, \
+            BuildMaskedImages=BuildMaskedImages)
         
         # * Append Additional information
         SFFTPrepDict['MAG_OFFSET'] = MAG_OFFSET

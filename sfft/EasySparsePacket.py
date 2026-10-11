@@ -308,9 +308,12 @@ class Easy_SparsePacket:
         CVREJ_NSIGMA=None, MIN_SUBSOURCE=None, ELABO_VAR_REJECTION=True, EVREJ_RATIO_THREH=5.0, \
         EVREJ_SAFE_MAGDEV=0.04, StarExt_iter=4, \
         PixA_REF_input=None, PixA_SCI_input=None, SATLEVEL_REF_input=None, SATLEVEL_SCI_input=None, \
-        XY_PriorBan=None, PreparedDetections=None, VERBOSE_LEVEL=1, VARREJ_SPDEG=None):
+        XY_PriorBan=None, PreparedDetections=None, VERBOSE_LEVEL=1, VARREJ_SPDEG=None, BuildMaskedImages=True):
 
         """CPU prep for Sparse-Flavor SFFT: source selection, ConvdSide/KerHW, masked image pairs.
+
+        BuildMaskedImages=False (PREPARED mode only) skips the masked image pair: PixA_mI/PixA_mJ come back
+        None and the caller builds them from SFFTPrepDict['Active-Mask'] (the images with zeros off it).
 
         PreparedDetections (dict) bypasses the internal SExtractor/Hough detection: supply
         pre-computed per-side GoodSource catalogs + segmentation maps + FWHM
@@ -341,7 +344,7 @@ class Easy_SparsePacket:
                 CVREJ_NSIGMA=CVREJ_NSIGMA, MIN_SUBSOURCE=MIN_SUBSOURCE, \
                 ELABO_VAR_REJECTION=ELABO_VAR_REJECTION, EVREJ_RATIO_THREH=EVREJ_RATIO_THREH, \
                 EVREJ_SAFE_MAGDEV=EVREJ_SAFE_MAGDEV, StarExt_iter=StarExt_iter, XY_PriorBan=XY_PriorBan, \
-                VARREJ_SPDEG=VARREJ_SPDEG)
+                VARREJ_SPDEG=VARREJ_SPDEG, BuildMaskedImages=BuildMaskedImages)
         elif XY_PriorSelect is None:
             IMAGE_MASK_METHOD = 'HOUGH-AUTO'
             if VERBOSE_LEVEL in [0, 1, 2]:
@@ -388,9 +391,10 @@ class Easy_SparsePacket:
         if ConvdSide == 'REF':
             PixA_mI, PixA_mJ = PixA_mREF, PixA_mSCI
             if NaNmask_U is not None:
+                # NOTE NaN pixels are in the ProhibitedZone, so the masked images hold 0.0 there
                 PixA_I, PixA_J = PixA_REF.copy(), PixA_SCI.copy()
-                PixA_I[NaNmask_U] = PixA_mI[NaNmask_U]
-                PixA_J[NaNmask_U] = PixA_mJ[NaNmask_U]
+                PixA_I[NaNmask_U] = 0.0 if PixA_mI is None else PixA_mI[NaNmask_U]
+                PixA_J[NaNmask_U] = 0.0 if PixA_mJ is None else PixA_mJ[NaNmask_U]
             else: PixA_I, PixA_J = PixA_REF, PixA_SCI
             if MaskSatContam: 
                 ContamMask_I = SatMask_REF
@@ -400,9 +404,10 @@ class Easy_SparsePacket:
         if ConvdSide == 'SCI':
             PixA_mI, PixA_mJ = PixA_mSCI, PixA_mREF
             if NaNmask_U is not None:
+                # NOTE NaN pixels are in the ProhibitedZone, so the masked images hold 0.0 there
                 PixA_I, PixA_J = PixA_SCI.copy(), PixA_REF.copy()
-                PixA_I[NaNmask_U] = PixA_mI[NaNmask_U]
-                PixA_J[NaNmask_U] = PixA_mJ[NaNmask_U]
+                PixA_I[NaNmask_U] = 0.0 if PixA_mI is None else PixA_mI[NaNmask_U]
+                PixA_J[NaNmask_U] = 0.0 if PixA_mJ is None else PixA_mJ[NaNmask_U]
             else: PixA_I, PixA_J = PixA_SCI, PixA_REF
             if MaskSatContam: 
                 ContamMask_I = SatMask_SCI
