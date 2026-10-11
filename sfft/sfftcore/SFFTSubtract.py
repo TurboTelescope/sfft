@@ -5,6 +5,14 @@ import numpy as np
 __author__ = "Lei Hu <hulei@pmo.ac.cn>"
 __version__ = "v1.4"
 
+class DeferredImage:
+    """An input image the Cupy backend builds on the device only where it would upload a host image, so the
+    device copy has the same lifetime as an uploaded one. build() returns a C-ordered array of the solve's
+    real dtype on the device; shape is its (N0, N1)."""
+    def __init__(self, shape, build):
+        self.shape = tuple(shape)
+        self.build = build
+
 class ElementalSFFTSubtract_Cupy:
     @staticmethod
     def ESSC(PixA_I, PixA_J, SFFTConfig, SFFTSolution=None, Subtract=False, VERBOSE_LEVEL=2, gpu_lock=None):
@@ -93,12 +101,23 @@ class ElementalSFFTSubtract_Cupy:
 
         t0 = time.time()
         # * Read input images as C-order arrays
-        if not PixA_I.flags['C_CONTIGUOUS']:
+        def _deferred(img):
+            img_GPU = img.build()
+            if img_GPU.shape != (N0, N1) or img_GPU.dtype != REAL_DTYPE or not img_GPU.flags['C_CONTIGUOUS']:
+                raise Exception('MeLOn ERROR: DeferredImage built %s %s, C-ordered %s [%d, %d] required!' \
+                    %(img_GPU.dtype, img_GPU.shape, np.dtype(REAL_DTYPE), N0, N1))
+            return img_GPU
+
+        if isinstance(PixA_I, DeferredImage):
+            PixA_I_GPU = _deferred(PixA_I)
+        elif not PixA_I.flags['C_CONTIGUOUS']:
             PixA_I = np.ascontiguousarray(PixA_I, REAL_DTYPE)
             PixA_I_GPU = cp.array(PixA_I)
         else: PixA_I_GPU = cp.array(PixA_I.astype(REAL_DTYPE, copy=False))
         
-        if not PixA_J.flags['C_CONTIGUOUS']:
+        if isinstance(PixA_J, DeferredImage):
+            PixA_J_GPU = _deferred(PixA_J)
+        elif not PixA_J.flags['C_CONTIGUOUS']:
             PixA_J = np.ascontiguousarray(PixA_J, REAL_DTYPE)
             PixA_J_GPU = cp.array(PixA_J)
         else: PixA_J_GPU = cp.array(PixA_J.astype(REAL_DTYPE, copy=False))
