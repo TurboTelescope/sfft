@@ -782,7 +782,7 @@ class SingleSFFTConfigure_Cupy:
         #include "cuComplex.h"
         extern "C" __global__ void kmain(int SREF_ijab_GPU[%(Fijab)s][2], int REF_ab_GPU[%(Fab)s][2],  
             cuDoubleComplex a_ijab_GPU[%(Fijab)s], cuDoubleComplex SPixA_FIij_GPU[%(Fij)s][%(N0)s][%(N1)s], 
-            cuDoubleComplex Kab_Wla_GPU[%(L0)s][%(N0)s][%(N1)s], cuDoubleComplex Kab_Wmb_GPU[%(L1)s][%(N0)s][%(N1)s], 
+            cuDoubleComplex Kab_Wla_GPU[%(L0)s][%(N0)s], cuDoubleComplex Kab_Wmb_GPU[%(L1)s][%(N1)s], 
             cuDoubleComplex b_pq_GPU[%(Fpq)s], cuDoubleComplex SPixA_FTpq_GPU[%(Fpq)s][%(N0)s][%(N1)s], 
             cuDoubleComplex PixA_FJ_GPU[%(N0)s][%(N1)s], cuDoubleComplex PixA_FDIFF_GPU[%(N0)s][%(N1)s])
         {       
@@ -828,7 +828,7 @@ class SingleSFFTConfigure_Cupy:
                     }
                     
                     if (a != 0 || b != 0) {
-                        PVAL_FKab = cuCmul(SCA, cuCsub(cuCmul(Kab_Wla_GPU[w0 + a][ROW][COL], Kab_Wmb_GPU[w1 + b][ROW][COL]), ONE));
+                        PVAL_FKab = cuCmul(SCA, cuCsub(cuCmul(Kab_Wla_GPU[w0 + a][ROW], Kab_Wmb_GPU[w1 + b][COL]), ONE));
                     }
 
                     for(int ij = 0; ij < Fij; ++ij){

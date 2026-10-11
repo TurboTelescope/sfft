@@ -438,10 +438,12 @@ class ElementalSFFTSubtract_Cupy:
             tc = time.time()
             t9 = time.time()
             # Calculate Kab components
-            Wl_GPU = cp.exp((-2j*np.pi/N0) * PixA_X_GPU.astype(REAL_DTYPE))    # row index l, [0, N0)
-            Wm_GPU = cp.exp((-2j*np.pi/N1) * PixA_Y_GPU.astype(REAL_DTYPE))    # column index m, [0, N1)
-            Kab_Wla_GPU = cp.empty((L0, N0, N1), dtype=COMPLEX_DTYPE)
-            Kab_Wmb_GPU = cp.empty((L1, N0, N1), dtype=COMPLEX_DTYPE)
+            #   NOTE Wl depends on the row index alone and Wm on the column index alone: one value per row / column
+            #        (the pixel grids PixA_X / PixA_Y repeat them along the other axis)
+            Wl_GPU = cp.exp((-2j*np.pi/N0) * cp.arange(N0, dtype=np.int32).astype(REAL_DTYPE))    # row index l, [0, N0)
+            Wm_GPU = cp.exp((-2j*np.pi/N1) * cp.arange(N1, dtype=np.int32).astype(REAL_DTYPE))    # column index m, [0, N1)
+            Kab_Wla_GPU = cp.empty((L0, N0), dtype=COMPLEX_DTYPE)
+            Kab_Wmb_GPU = cp.empty((L1, N1), dtype=COMPLEX_DTYPE)
 
             if w0 == w1:
                 wx = w0   # a little bit faster
