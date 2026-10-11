@@ -179,7 +179,6 @@ class SingleSFFTConfigure_Cupy:
         #include "cuComplex.h"
         extern "C" __global__ void kmain(int SREF_iji0j0_GPU[%(FOMG)s][2],
             cuDoubleComplex SPixA_FIij_GPU[%(Fij)s][%(N0)s][%(N1)s],
-            cuDoubleComplex SPixA_CFIij_GPU[%(Fij)s][%(N0)s][%(N1)s], 
             cuDoubleComplex HpOMG_GPU[%(FOMG)s][%(N0)s][%(N1)s]) 
         {
             int ROW = blockIdx.x*blockDim.x+threadIdx.x;
@@ -200,7 +199,7 @@ class SingleSFFTConfigure_Cupy:
             __shared__ cuDoubleComplex ShSPixA_CFIij_GPU[%(Fij)s][%(ThreadPerB)s][%(ThreadPerB)s];
             if (ROW < N0 && COL < N1) {
                 for(int ij = 0; ij < Fij; ++ij){
-                    ShSPixA_CFIij_GPU[ij][threadIdx.x][threadIdx.y] = SPixA_CFIij_GPU[ij][ROW][COL];
+                    ShSPixA_CFIij_GPU[ij][threadIdx.x][threadIdx.y] = cuConj(SPixA_FIij_GPU[ij][ROW][COL]);
                 }
             }
             __syncthreads();
@@ -311,7 +310,7 @@ class SingleSFFTConfigure_Cupy:
         #include "cuComplex.h"
         extern "C" __global__ void kmain(int SREF_ijpq_GPU[%(FGAM)s][2], 
             cuDoubleComplex SPixA_FIij_GPU[%(Fij)s][%(N0)s][%(N1)s],
-            cuDoubleComplex SPixA_CFTpq_GPU[%(Fpq)s][%(N0)s][%(N1)s], 
+            cuDoubleComplex SPixA_FTpq_GPU[%(Fpq)s][%(N0)s][%(N1)s], 
             cuDoubleComplex HpGAM_GPU[%(FGAM)s][%(N0)s][%(N1)s])
         {
             int ROW = blockIdx.x*blockDim.x+threadIdx.x;
@@ -333,7 +332,7 @@ class SingleSFFTConfigure_Cupy:
             __shared__ cuDoubleComplex ShSPixA_CFTpq_GPU[%(Fpq)s][%(ThreadPerB)s][%(ThreadPerB)s];
             if (ROW < N0 && COL < N1) {
                 for(int pq = 0; pq < Fpq; ++pq){
-                    ShSPixA_CFTpq_GPU[pq][threadIdx.x][threadIdx.y] = SPixA_CFTpq_GPU[pq][ROW][COL];
+                    ShSPixA_CFTpq_GPU[pq][threadIdx.x][threadIdx.y] = cuConj(SPixA_FTpq_GPU[pq][ROW][COL]);
                 }
             }
             __syncthreads();
@@ -414,7 +413,7 @@ class SingleSFFTConfigure_Cupy:
         _funcstr = r"""
         #include "cuComplex.h"
         extern "C" __global__ void kmain(int SREF_pqij_GPU[%(FPSI)s][2],
-            cuDoubleComplex SPixA_CFIij_GPU[%(Fij)s][%(N0)s][%(N1)s], 
+            cuDoubleComplex SPixA_FIij_GPU[%(Fij)s][%(N0)s][%(N1)s], 
             cuDoubleComplex SPixA_FTpq_GPU[%(Fpq)s][%(N0)s][%(N1)s], 
             cuDoubleComplex HpPSI_GPU[%(FPSI)s][%(N0)s][%(N1)s]) 
         {    
@@ -437,7 +436,7 @@ class SingleSFFTConfigure_Cupy:
             __shared__ cuDoubleComplex ShSPixA_CFIij_GPU[%(Fij)s][%(ThreadPerB)s][%(ThreadPerB)s];
             if (ROW < N0 && COL < N1) {
                 for(int ij = 0; ij < Fij; ++ij){
-                    ShSPixA_CFIij_GPU[ij][threadIdx.x][threadIdx.y] = SPixA_CFIij_GPU[ij][ROW][COL];
+                    ShSPixA_CFIij_GPU[ij][threadIdx.x][threadIdx.y] = cuConj(SPixA_FIij_GPU[ij][ROW][COL]);
                 }
             }
             __syncthreads();
@@ -519,7 +518,6 @@ class SingleSFFTConfigure_Cupy:
         #include "cuComplex.h"
         extern "C" __global__ void kmain(int SREF_pqp0q0_GPU[%(FPHI)s][2], 
             cuDoubleComplex SPixA_FTpq_GPU[%(Fpq)s][%(N0)s][%(N1)s], 
-            cuDoubleComplex SPixA_CFTpq_GPU[%(Fpq)s][%(N0)s][%(N1)s],  
             cuDoubleComplex HpPHI_GPU[%(FPHI)s][%(N0)s][%(N1)s]) 
         {    
             int ROW = blockIdx.x*blockDim.x+threadIdx.x;
@@ -540,7 +538,7 @@ class SingleSFFTConfigure_Cupy:
             __shared__ cuDoubleComplex ShSPixA_CFTpq_GPU[%(Fpq)s][%(ThreadPerB)s][%(ThreadPerB)s];
             if (ROW < N0 && COL < N1) {
                 for(int pq = 0; pq < Fpq; ++pq){
-                    ShSPixA_CFTpq_GPU[pq][threadIdx.x][threadIdx.y] = SPixA_CFTpq_GPU[pq][ROW][COL];
+                    ShSPixA_CFTpq_GPU[pq][threadIdx.x][threadIdx.y] = cuConj(SPixA_FTpq_GPU[pq][ROW][COL]);
                 }
             }
             __syncthreads();
@@ -601,7 +599,7 @@ class SingleSFFTConfigure_Cupy:
         _funcstr = r"""
         #include "cuComplex.h"
         extern "C" __global__ void kmain(cuDoubleComplex SPixA_FIij_GPU[%(Fij)s][%(N0)s][%(N1)s],
-            cuDoubleComplex PixA_CFJ_GPU[%(N0)s][%(N1)s], cuDoubleComplex HpTHE_GPU[%(FTHE)s][%(N0)s][%(N1)s])
+            cuDoubleComplex PixA_FJ_GPU[%(N0)s][%(N1)s], cuDoubleComplex HpTHE_GPU[%(FTHE)s][%(N0)s][%(N1)s])
         {    
             int ROW = blockIdx.x*blockDim.x+threadIdx.x;
             int COL = blockIdx.y*blockDim.y+threadIdx.y;
@@ -612,7 +610,7 @@ class SingleSFFTConfigure_Cupy:
 
             if (ROW < N0 && COL < N1) {
                 for(int i8j8 = 0; i8j8 < FTHE; ++i8j8){
-                    HpTHE_GPU[i8j8][ROW][COL] = cuCmul(PixA_CFJ_GPU[ROW][COL], SPixA_FIij_GPU[i8j8][ROW][COL]);
+                    HpTHE_GPU[i8j8][ROW][COL] = cuCmul(cuConj(PixA_FJ_GPU[ROW][COL]), SPixA_FIij_GPU[i8j8][ROW][COL]);
                 }
             }
         }
@@ -677,7 +675,7 @@ class SingleSFFTConfigure_Cupy:
         _funcstr = r"""
         #include "cuComplex.h"
         extern "C" __global__ void kmain(cuDoubleComplex SPixA_FTpq_GPU[%(Fpq)s][%(N0)s][%(N1)s], 
-            cuDoubleComplex PixA_CFJ_GPU[%(N0)s][%(N1)s], cuDoubleComplex HpDEL_GPU[%(FDEL)s][%(N0)s][%(N1)s])
+            cuDoubleComplex PixA_FJ_GPU[%(N0)s][%(N1)s], cuDoubleComplex HpDEL_GPU[%(FDEL)s][%(N0)s][%(N1)s])
         {
             int ROW = blockIdx.x*blockDim.x+threadIdx.x;
             int COL = blockIdx.y*blockDim.y+threadIdx.y;
@@ -689,7 +687,7 @@ class SingleSFFTConfigure_Cupy:
             if (ROW < N0 && COL < N1) {
                 for(int p8q8 = 0; p8q8 < FDEL; ++p8q8){
                     HpDEL_GPU[p8q8][ROW][COL] = 
-                        cuCmul(PixA_CFJ_GPU[ROW][COL], SPixA_FTpq_GPU[p8q8][ROW][COL]);
+                        cuCmul(cuConj(PixA_FJ_GPU[ROW][COL]), SPixA_FTpq_GPU[p8q8][ROW][COL]);
                 }
             }
         }

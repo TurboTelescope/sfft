@@ -186,11 +186,7 @@ class ElementalSFFTSubtract_Cupy:
         del SPixA_Iij_GPU
         del SPixA_Tpq_GPU
 
-        # NOTE the conjugates enter only the linear system (not the subtraction with a given solution)
-        if SFFTSolution is None:
-            PixA_CFJ_GPU = cp.conj(PixA_FJ_GPU)
-            SPixA_CFIij_GPU = cp.conj(SPixA_FIij_GPU)
-            SPixA_CFTpq_GPU = cp.conj(SPixA_FTpq_GPU)
+        # NOTE the Hadamard-product kernels conjugate on the fly (no conjugate copies of the DFTs)
         dt2 = time.time() - t2
         dta = time.time() - ta
 
@@ -252,7 +248,7 @@ class ElementalSFFTSubtract_Cupy:
             _module = SFFTModule_dict['HadProd_OMG']
             _func = _module.get_function('kmain')
             HpOMG_GPU = cp.empty((FOMG, N0, N1), dtype=COMPLEX_DTYPE)
-            _func(args=(SREF_iji0j0_GPU, SPixA_FIij_GPU, SPixA_CFIij_GPU, HpOMG_GPU), \
+            _func(args=(SREF_iji0j0_GPU, SPixA_FIij_GPU, HpOMG_GPU), \
                 block=TpB_PIX, grid=BpG_PIX)
 
             # b. PreOMG = SCALE * Re[DFT(HpOMG)]
@@ -281,7 +277,7 @@ class ElementalSFFTSubtract_Cupy:
             _module = SFFTModule_dict['HadProd_GAM']
             _func = _module.get_function('kmain')
             HpGAM_GPU = cp.empty((FGAM, N0, N1), dtype=COMPLEX_DTYPE)
-            _func(args=(SREF_ijpq_GPU, SPixA_FIij_GPU, SPixA_CFTpq_GPU, HpGAM_GPU), \
+            _func(args=(SREF_ijpq_GPU, SPixA_FIij_GPU, SPixA_FTpq_GPU, HpGAM_GPU), \
                 block=TpB_PIX, grid=BpG_PIX)
 
             # b. PreGAM = 1 * Re[DFT(HpGAM)]
@@ -309,7 +305,7 @@ class ElementalSFFTSubtract_Cupy:
             _module = SFFTModule_dict['HadProd_PSI']
             _func = _module.get_function('kmain')
             HpPSI_GPU = cp.empty((FPSI, N0, N1), dtype=COMPLEX_DTYPE)
-            _func(args=(SREF_pqij_GPU, SPixA_CFIij_GPU, SPixA_FTpq_GPU, HpPSI_GPU), \
+            _func(args=(SREF_pqij_GPU, SPixA_FIij_GPU, SPixA_FTpq_GPU, HpPSI_GPU), \
                 block=TpB_PIX, grid=BpG_PIX)
 
             # b. PrePSI = 1 * Re[DFT(HpPSI)]
@@ -337,7 +333,7 @@ class ElementalSFFTSubtract_Cupy:
             _module = SFFTModule_dict['HadProd_PHI']
             _func = _module.get_function('kmain')
             HpPHI_GPU = cp.empty((FPHI, N0, N1), dtype=COMPLEX_DTYPE)
-            _func(args=(SREF_pqp0q0_GPU, SPixA_FTpq_GPU, SPixA_CFTpq_GPU, HpPHI_GPU), \
+            _func(args=(SREF_pqp0q0_GPU, SPixA_FTpq_GPU, HpPHI_GPU), \
                 block=TpB_PIX, grid=BpG_PIX)
 
             # b. PrePHI = SCALE_L * Re[DFT(HpPHI)]
@@ -365,13 +361,13 @@ class ElementalSFFTSubtract_Cupy:
             _module = SFFTModule_dict['HadProd_THE']
             _func = _module.get_function('kmain')
             HpTHE_GPU = cp.empty((FTHE, N0, N1), dtype=COMPLEX_DTYPE)
-            _func(args=(SPixA_FIij_GPU, PixA_CFJ_GPU, HpTHE_GPU), block=TpB_PIX, grid=BpG_PIX)
+            _func(args=(SPixA_FIij_GPU, PixA_FJ_GPU, HpTHE_GPU), block=TpB_PIX, grid=BpG_PIX)
 
             # a2. Hadamard Product for 𝚫  [HpDEL]
             _module = SFFTModule_dict['HadProd_DEL']
             _func = _module.get_function('kmain')
             HpDEL_GPU = cp.empty((FDEL, N0, N1), dtype=COMPLEX_DTYPE)
-            _func(args=(SPixA_FTpq_GPU, PixA_CFJ_GPU, HpDEL_GPU), block=TpB_PIX, grid=BpG_PIX)
+            _func(args=(SPixA_FTpq_GPU, PixA_FJ_GPU, HpDEL_GPU), block=TpB_PIX, grid=BpG_PIX)
 
             # b1. PreTHE = 1 * Re[DFT(HpTHE)]
             # b2. PreDEL = SCALE_L * Re[DFT(HpDEL)]
