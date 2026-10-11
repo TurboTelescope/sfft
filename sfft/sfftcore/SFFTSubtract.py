@@ -165,9 +165,11 @@ class ElementalSFFTSubtract_Cupy:
         del SPixA_Iij_GPU
         del SPixA_Tpq_GPU
 
-        PixA_CFJ_GPU = cp.conj(PixA_FJ_GPU)
-        SPixA_CFIij_GPU = cp.conj(SPixA_FIij_GPU)
-        SPixA_CFTpq_GPU = cp.conj(SPixA_FTpq_GPU)
+        # NOTE the conjugates enter only the linear system (not the subtraction with a given solution)
+        if SFFTSolution is None:
+            PixA_CFJ_GPU = cp.conj(PixA_FJ_GPU)
+            SPixA_CFIij_GPU = cp.conj(SPixA_FIij_GPU)
+            SPixA_CFTpq_GPU = cp.conj(SPixA_FTpq_GPU)
         dt2 = time.time() - t2
         dta = time.time() - ta
 
